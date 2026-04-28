@@ -84,6 +84,10 @@ You can install these dependencies using the provided `requirements.txt` file.
 
 4. **Click "Predict Price"** to see the result.
 
+## License
+
+This project is protected under MIT License.
+
 ## Disclaimer
 
 This project is for educational purposes only. The predictions are based on a
