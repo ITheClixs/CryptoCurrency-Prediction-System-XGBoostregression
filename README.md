@@ -808,6 +808,10 @@ claim about profitability would require out-of-sample validation, transaction
 cost modeling, and risk analysis that are not currently implemented in this
 repository.
 
+## 17. License
+
+This project is protected under the MIT License.
+
 ## References
 
 1. T. Chen and C. Guestrin, "XGBoost: A Scalable Tree Boosting System," 2016.
