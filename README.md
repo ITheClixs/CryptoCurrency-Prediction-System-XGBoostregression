@@ -167,7 +167,7 @@ horizon grows.
 Let asset identity be indexed by $a$, and let daily time be indexed by
 $t = 1,\ldots,T$. The raw market observation is
 
-$$
+```math
 z_t^{(a)}
 =
 \left(
@@ -177,7 +177,7 @@ L_t^{(a)},
 C_t^{(a)},
 V_t^{(a)}
 \right),
-$$
+```
 
 where $O_t$ is open price, $H_t$ is high price, $L_t$ is low price,
 $C_t$ is close price, and $V_t$ is volume. For readability, the asset
@@ -185,28 +185,28 @@ superscript is omitted in later equations.
 
 The observed historical sample is
 
-$$
+```math
 \mathcal{D}_T = \{z_t\}_{t=1}^{T}.
-$$
+```
 
 When `train_model()` is called, the repository requests one year of daily
 observations:
 
-$$
+```math
 T_{\mathrm{train}} = 365.
-$$
+```
 
 At prediction time, the repository requests a shorter recent window:
 
-$$
+```math
 T_{\mathrm{predict}} = 30.
-$$
+```
 
 The charting path separately requests:
 
-$$
+```math
 T_{\mathrm{chart}} = 180.
-$$
+```
 
 ## 6. Feature Map
 
@@ -217,53 +217,53 @@ learning feature vector after dropping rows with missing rolling-window values.
 
 For a rolling window $k$, the simple moving average is
 
-$$
+```math
 \mathrm{SMA}_k(t)
 =
 \frac{1}{k}
 \sum_{i=0}^{k-1} C_{t-i}.
-$$
+```
 
 The implemented windows are $k=7$ and $k=14$:
 
-$$
+```math
 \mathrm{SMA}_7(t)
 =
 \frac{1}{7}
 \sum_{i=0}^{6} C_{t-i},
-$$
+```
 
-$$
+```math
 \mathrm{SMA}_{14}(t)
 =
 \frac{1}{14}
 \sum_{i=0}^{13} C_{t-i}.
-$$
+```
 
 The moving averages expose local price-level structure. A tree model can then
 learn nonlinear conditions such as whether short-run price level exceeds
 longer-run price level:
 
-$$
+```math
 \mathrm{SMA}_7(t) > \mathrm{SMA}_{14}(t).
-$$
+```
 
 ### 6.2 Momentum
 
 The implemented momentum feature is a four-day close-price difference:
 
-$$
+```math
 M_4(t) = C_t - C_{t-4}.
-$$
+```
 
 This is additive momentum, not percentage momentum. The scale-dependent nature
 is important:
 
-$$
+```math
 C_t - C_{t-4}
 \neq
 \frac{C_t - C_{t-4}}{C_{t-4}}.
-$$
+```
 
 For assets with different nominal price levels, this motivates explicit feature
 normalization.
@@ -272,7 +272,7 @@ normalization.
 
 The code uses a seven-day rolling sample standard deviation of close prices:
 
-$$
+```math
 \sigma_7(t)
 =
 \sqrt{
@@ -280,20 +280,20 @@ $$
 \sum_{i=0}^{6}
 \left(C_{t-i} - \mathrm{SMA}_7(t)\right)^2
 }.
-$$
+```
 
 This is a price-level volatility proxy. A return-volatility estimator would use
 arithmetic returns
 
-$$
+```math
 r_t = \frac{C_t - C_{t-1}}{C_{t-1}}
-$$
+```
 
 or log returns
 
-$$
+```math
 \ell_t = \log C_t - \log C_{t-1}.
-$$
+```
 
 The implemented repository uses price-level dispersion because it follows
 directly from `data["Close"].rolling(7).std()`.
@@ -302,13 +302,13 @@ directly from `data["Close"].rolling(7).std()`.
 
 After feature construction, the model target is the same-day close:
 
-$$
+```math
 y_t = C_t.
-$$
+```
 
 The feature vector is
 
-$$
+```math
 x_t =
 \left[
 O_t,\,
@@ -320,11 +320,11 @@ V_t,\,
 M_4(t),\,
 \sigma_7(t)
 \right]^\top.
-$$
+```
 
 Let $p=8$ be the feature dimension. The design matrix is
 
-$$
+```math
 X =
 \begin{bmatrix}
 x_1^\top \\
@@ -341,7 +341,7 @@ C_2 \\
 \vdots \\
 C_n
 \end{bmatrix}.
-$$
+```
 
 The use of same-day high, low, volume, and rolling statistics containing
 $C_t$ means the trained model is not a strict next-day forecasting model. It
@@ -353,31 +353,31 @@ geometric trend rule.
 The repository applies min-max scaling to the feature matrix before fitting the
 XGBoost model. For feature $j$, define
 
-$$
+```math
 m_j = \min_{1 \leq i \leq n} X_{i,j},
 \qquad
 M_j = \max_{1 \leq i \leq n} X_{i,j}.
-$$
+```
 
 The scaled feature is
 
-$$
+```math
 \widetilde{X}_{i,j}
 =
 \frac{X_{i,j} - m_j}{M_j - m_j}.
-$$
+```
 
 In vector form, the transformation can be written as
 
-$$
+```math
 \widetilde{x}_i
 =
 D^{-1}(x_i - m),
-$$
+```
 
 where
 
-$$
+```math
 D =
 \mathrm{diag}
 \left(
@@ -386,17 +386,17 @@ M_2-m_2,\,
 \ldots,\,
 M_p-m_p
 \right).
-$$
+```
 
 If future values remain inside the observed training range, each scaled feature
 lies in the interval $[0,1]$. If future values exceed the training extrema,
 min-max scaling can produce values below 0 or above 1:
 
-$$
+```math
 x_{*,j} > M_j
 \quad \Rightarrow \quad
 \widetilde{x}_{*,j} > 1.
-$$
+```
 
 This matters in cryptocurrency markets because new highs, new lows, and volume
 regime changes are common.
@@ -413,53 +413,53 @@ XGBRegressor(objective="reg:squarederror", n_estimators=150)
 The model represents the prediction function as an additive ensemble of
 regression trees:
 
-$$
+```math
 \widehat{f}_K(\widetilde{x})
 =
 \sum_{k=1}^{K} f_k(\widetilde{x}),
 \qquad
 f_k \in \mathcal{F}.
-$$
+```
 
 Each tree maps an input vector to a leaf score:
 
-$$
+```math
 f_k(\widetilde{x}) = w_{q_k(\widetilde{x})},
-$$
+```
 
 where $q_k(\cdot)$ assigns the observation to a leaf and $w$ contains the
 leaf weights.
 
 The empirical squared-error loss is
 
-$$
+```math
 \mathcal{L}
 =
 \sum_{i=1}^{n}
 \left(y_i - \widehat{y}_i\right)^2.
-$$
+```
 
 XGBoost uses a regularized objective of the form
 
-$$
+```math
 \mathrm{Obj}
 =
 \sum_{i=1}^{n}
 l(y_i,\widehat{y}_i)
 +
 \sum_{k=1}^{K}\Omega(f_k),
-$$
+```
 
 with tree complexity penalty
 
-$$
+```math
 \Omega(f)
 =
 \gamma T_f
 +
 \frac{\lambda}{2}
 \sum_{j=1}^{T_f}w_j^2.
-$$
+```
 
 Here $T_f$ is the number of leaves in tree $f$, $w_j$ is the score in leaf
 $j$, $\gamma$ penalizes additional leaves, and $\lambda$ penalizes large
@@ -469,15 +469,15 @@ leaf weights.
 
 At boosting iteration $k$, the prediction before adding the new tree is
 
-$$
+```math
 \widehat{y}_i^{(k-1)}
 =
 \sum_{s=1}^{k-1} f_s(\widetilde{x}_i).
-$$
+```
 
 The next tree is chosen to minimize
 
-$$
+```math
 \mathrm{Obj}^{(k)}
 =
 \sum_{i=1}^{n}
@@ -487,12 +487,12 @@ y_i,
 \right)
 +
 \Omega(f_k).
-$$
+```
 
 Using a second-order Taylor approximation around
 $\widehat{y}_i^{(k-1)}$,
 
-$$
+```math
 l\left(
 y_i,
 \widehat{y}_i^{(k-1)} + f_k(\widetilde{x}_i)
@@ -503,11 +503,11 @@ l\left(y_i,\widehat{y}_i^{(k-1)}\right)
 g_i f_k(\widetilde{x}_i)
 +
 \frac{1}{2}h_i f_k(\widetilde{x}_i)^2,
-$$
+```
 
 where
 
-$$
+```math
 g_i =
 \frac{\partial l(y_i,\widehat{y})}{\partial \widehat{y}}
 \bigg|_{\widehat{y}=\widehat{y}_i^{(k-1)}},
@@ -515,27 +515,27 @@ g_i =
 h_i =
 \frac{\partial^2 l(y_i,\widehat{y})}{\partial \widehat{y}^2}
 \bigg|_{\widehat{y}=\widehat{y}_i^{(k-1)}}.
-$$
+```
 
 For squared error,
 
-$$
+```math
 l(y_i,\widehat{y}_i)
 =
 \left(y_i-\widehat{y}_i\right)^2,
-$$
+```
 
 so the derivatives are
 
-$$
+```math
 g_i = 2\left(\widehat{y}_i^{(k-1)}-y_i\right),
 \qquad
 h_i = 2.
-$$
+```
 
 Ignoring constants independent of the new tree gives
 
-$$
+```math
 \widetilde{\mathrm{Obj}}^{(k)}
 =
 \sum_{i=1}^{n}
@@ -549,27 +549,27 @@ g_i f_k(\widetilde{x}_i)
 +
 \frac{\lambda}{2}
 \sum_{j=1}^{T}w_j^2.
-$$
+```
 
 Let
 
-$$
+```math
 I_j = \{i : q(\widetilde{x}_i)=j\}
-$$
+```
 
 be the observations assigned to leaf $j$. Define the leaf-level gradient and
 Hessian sums:
 
-$$
+```math
 G_j = \sum_{i \in I_j} g_i,
 \qquad
 H_j = \sum_{i \in I_j} h_i.
-$$
+```
 
 Because $f_k(\widetilde{x}_i)=w_j$ for observations in leaf $j$, the
 objective decomposes by leaf:
 
-$$
+```math
 \widetilde{\mathrm{Obj}}^{(k)}
 =
 \sum_{j=1}^{T}
@@ -580,29 +580,29 @@ G_jw_j
 \right]
 +
 \gamma T.
-$$
+```
 
 Differentiating with respect to $w_j$ gives
 
-$$
+```math
 \frac{\partial \widetilde{\mathrm{Obj}}^{(k)}}{\partial w_j}
 =
 G_j + (H_j+\lambda)w_j.
-$$
+```
 
 Setting the derivative equal to zero yields the optimal leaf weight:
 
-$$
+```math
 w_j^\star
 =
 -
 \frac{G_j}{H_j+\lambda}.
-$$
+```
 
 Substituting $w_j^\star$ into the objective gives the score for a fixed tree
 structure:
 
-$$
+```math
 \widetilde{\mathrm{Obj}}^{(k)}(q)
 =
 -
@@ -611,11 +611,11 @@ $$
 \frac{G_j^2}{H_j+\lambda}
 +
 \gamma T.
-$$
+```
 
 For a candidate split into left and right children, the split gain is
 
-$$
+```math
 \mathrm{Gain}
 =
 \frac{1}{2}
@@ -628,7 +628,7 @@ $$
 \right]
 -
 \gamma.
-$$
+```
 
 A split is selected when the reduction in approximate regularized loss is large
 enough to justify the additional tree complexity.
@@ -638,44 +638,44 @@ enough to justify the additional tree complexity.
 The primary model path first predicts a base close estimate from the latest
 scaled feature row:
 
-$$
+```math
 \widehat{C}_{t,\mathrm{base}}
 =
 \widehat{f}_K(\widetilde{x}_t).
-$$
+```
 
 During training, the application stores the empirical mean daily arithmetic
 return:
 
-$$
+```math
 \overline{r}
 =
 \frac{1}{n-1}
 \sum_{s=2}^{n}
 \frac{C_s-C_{s-1}}{C_{s-1}}.
-$$
+```
 
 For requested horizon $h$, the repository projects the base estimate as
 
-$$
+```math
 \widehat{C}_{t+h}
 =
 \widehat{C}_{t,\mathrm{base}}
 \left(1+\overline{r}\right)^h.
-$$
+```
 
 This formula follows from recursive compounding. For one step,
 
-$$
+```math
 \widehat{C}_{t+1}
 =
 \widehat{C}_{t,\mathrm{base}}
 \left(1+\overline{r}\right).
-$$
+```
 
 For two steps,
 
-$$
+```math
 \widehat{C}_{t+2}
 =
 \widehat{C}_{t+1}
@@ -683,20 +683,20 @@ $$
 =
 \widehat{C}_{t,\mathrm{base}}
 \left(1+\overline{r}\right)^2.
-$$
+```
 
 By induction,
 
-$$
+```math
 \widehat{C}_{t+h}
 =
 \widehat{C}_{t,\mathrm{base}}
 \left(1+\overline{r}\right)^h.
-$$
+```
 
 The UI reports the projected percentage change as
 
-$$
+```math
 \Delta_h
 =
 \frac{
@@ -705,13 +705,13 @@ $$
 C_t
 }
 \times 100\%.
-$$
+```
 
 The prediction is displayed as upward when
 
-$$
+```math
 \widehat{C}_{t+h} > C_t,
-$$
+```
 
 and downward otherwise.
 
@@ -721,34 +721,34 @@ When either `self.model` or `self.scaler` is missing, the application avoids the
 XGBoost path and uses recent arithmetic returns. For a close-price sequence
 $\{C_1,\ldots,C_n\}$, the one-period returns are
 
-$$
+```math
 r_i = \frac{C_i-C_{i-1}}{C_{i-1}},
 \qquad
 i=2,\ldots,n.
-$$
+```
 
 The fallback mean uses at most the latest seven returns:
 
-$$
+```math
 m = \min(7,n-1),
-$$
+```
 
-$$
+```math
 \overline{r}_{\mathrm{recent}}
 =
 \frac{1}{m}
 \sum_{j=0}^{m-1}
 r_{n-j}.
-$$
+```
 
 The fallback forecast is
 
-$$
+```math
 \widehat{C}_{t+h}^{\mathrm{fallback}}
 =
 C_t
 \left(1+\overline{r}_{\mathrm{recent}}\right)^h.
-$$
+```
 
 Inside `predict_price()`, Yahoo Finance failures can trigger a CoinGecko
 fallback for a small supported symbol set:
@@ -800,30 +800,30 @@ Route routine:
 
 The implemented model can be decomposed as
 
-$$
+```math
 \widehat{C}_{t+h}
 =
 g_{\mathrm{trend}}
 \left(
 g_{\mathrm{ML}}(\phi(z_t))
 \right),
-$$
+```
 
 where
 
-$$
+```math
 g_{\mathrm{ML}}(\phi(z_t))
 =
 \widehat{f}_K(\widetilde{x}_t),
-$$
+```
 
 and
 
-$$
+```math
 g_{\mathrm{trend}}(u)
 =
 u(1+\overline{r})^h.
-$$
+```
 
 This decomposition exposes two separate assumptions:
 
@@ -835,17 +835,17 @@ Both assumptions are strong. In liquid markets, a random-walk benchmark is often
 difficult to beat out of sample. A rigorous empirical study would therefore
 compare the model against the naive baseline
 
-$$
+```math
 \widehat{C}_{t+h}^{\mathrm{rw}} = C_t,
-$$
+```
 
 and against an empirical drift baseline
 
-$$
+```math
 \widehat{C}_{t+h}^{\mathrm{drift}}
 =
 C_t(1+\overline{r})^h.
-$$
+```
 
 The repository currently implements the second idea as a fallback, but it does
 not yet run a formal benchmark evaluation.
@@ -858,17 +858,17 @@ The current target is $C_t$, while the feature vector includes same-day
 variables such as $H_t$, $L_t$, $V_t$, and rolling features containing
 $C_t$. A strict forecasting target would be shifted:
 
-$$
+```math
 y_t^{\mathrm{next}} = C_{t+1},
-$$
+```
 
 or defined as a forward return:
 
-$$
+```math
 y_t^{\mathrm{return}}
 =
 \frac{C_{t+h}-C_t}{C_t}.
-$$
+```
 
 Therefore, the XGBoost component should be read as a same-period price-level
 regressor embedded inside a forward projection rule.
@@ -880,9 +880,9 @@ rolling-origin validation, expanding-window validation, or out-of-sample
 benchmark comparisons. A research-grade experiment would define train and test
 sets such that
 
-$$
+```math
 \max(t_{\mathrm{train}}) < \min(t_{\mathrm{test}}).
-$$
+```
 
 Without this separation, in-sample error would not be evidence of forecasting
 skill.
@@ -893,7 +893,7 @@ A prediction can be directionally correct while still being unprofitable after
 costs. A strategy-level return would need to subtract fees, slippage, spread,
 and turnover effects:
 
-$$
+```math
 R_t^{\mathrm{net}}
 =
 R_t^{\mathrm{gross}}
@@ -903,7 +903,7 @@ R_t^{\mathrm{gross}}
 \mathrm{slippage}_t
 -
 \mathrm{spread}_t.
-$$
+```
 
 No such trading layer exists in this repository.
 
@@ -911,18 +911,18 @@ No such trading layer exists in this repository.
 
 The application returns a single projected price:
 
-$$
+```math
 \widehat{C}_{t+h}.
-$$
+```
 
 It does not estimate an interval such as
 
-$$
+```math
 \left[
 q_{\alpha/2}(C_{t+h}\mid x_t),
 q_{1-\alpha/2}(C_{t+h}\mid x_t)
 \right].
-$$
+```
 
 For risk-aware use, predictive intervals and tail estimates are usually more
 informative than isolated point forecasts.
@@ -931,9 +931,9 @@ informative than isolated point forecasts.
 
 The conditional distribution
 
-$$
+```math
 P(C_{t+h}\mid x_t)
-$$
+```
 
 is unlikely to remain stable across exchange failures, ETF-flow regimes,
 leverage cycles, liquidity shocks, protocol events, regulatory shifts, and
@@ -959,32 +959,32 @@ iteration should implement:
 
 For example, an $h$-day forward-return target could be defined as
 
-$$
+```math
 y_t^{(h)}
 =
 \frac{C_{t+h}-C_t}{C_t}.
-$$
+```
 
 All features would then need to be measurable at decision time $t$, and every
 training example would satisfy
 
-$$
+```math
 x_t \in \mathcal{F}_t,
 \qquad
 y_t^{(h)} \in \mathcal{F}_{t+h},
-$$
+```
 
 where $\mathcal{F}_t$ denotes the information available at time $t$.
 
 A walk-forward evaluation could use windows
 
-$$
+```math
 \mathcal{T}_k =
 \{1,\ldots,t_k\},
 \qquad
 \mathcal{V}_k =
 \{t_k+1,\ldots,t_k+h\}.
-$$
+```
 
 The model would be trained on $\mathcal{T}_k$, evaluated on
 $\mathcal{V}_k$, and then rolled forward.
