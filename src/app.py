@@ -12,6 +12,16 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 TEMPLATES_DIR = os.path.join(BASE_DIR, 'templates')
 app = Flask(__name__, template_folder=TEMPLATES_DIR)
 
+MARKET_COLUMNS = ['Open', 'High', 'Low', 'Close', 'Volume']
+COINGECKO_IDS = {
+    'BTC': 'bitcoin',
+    'ETH': 'ethereum',
+    'XRP': 'ripple',
+    'SOL': 'solana',
+    'LTC': 'litecoin',
+    'DOGE': 'dogecoin',
+}
+
 
 def _to_scalar(val):
     """Coerce pandas/numpy/iterable values to a Python float scalar."""
@@ -39,6 +49,40 @@ def _to_scalar(val):
         pass
     raise ValueError(f"Unable to convert value to scalar: {type(val)}")
 
+
+def _parse_prediction_days(raw_days):
+    try:
+        days = int(raw_days)
+    except (TypeError, ValueError):
+        raise ValueError("Days must be an integer between 1 and 90.")
+    return max(1, min(days, 90))
+
+
+def _normalize_market_data(data):
+    if hasattr(data.columns, 'nlevels') and data.columns.nlevels > 1:
+        data = data.copy()
+        for level in range(data.columns.nlevels):
+            level_values = list(data.columns.get_level_values(level))
+            if all(column in level_values for column in MARKET_COLUMNS):
+                data.columns = level_values
+                break
+
+    if hasattr(data.columns, 'duplicated'):
+        data = data.loc[:, ~data.columns.duplicated()]
+
+    missing_columns = [column for column in MARKET_COLUMNS if column not in data.columns]
+    if missing_columns:
+        raise ValueError(f"Market data missing required columns: {', '.join(missing_columns)}")
+
+    return data[MARKET_COLUMNS].dropna()
+
+
+def _close_series(data):
+    close = data['Close']
+    if hasattr(close, 'iloc') and hasattr(close, 'columns'):
+        return close.iloc[:, 0]
+    return close
+
 # Crypto Predictor Class
 class CryptoPredictor:
     def __init__(self):
@@ -65,11 +109,50 @@ class CryptoPredictor:
             data = yf.download(ticker, period=f"{days}d", progress=False)
             if data is None or data.empty:
                 raise ValueError(f"No data returned for ticker '{ticker}'. Please check the symbol and try again.")
-            # Standardize column names
-            data = data[['Open', 'High', 'Low', 'Close', 'Volume']]
-            return data.dropna()
+            return _normalize_market_data(data)
         except Exception as e:
             raise ValueError(f"Data download failed: {str(e)}")
+
+    def get_coingecko_close_prices(self, crypto, days=30):
+        try:
+            try:
+                import requests
+
+                def http_get(url, timeout=10):
+                    r = requests.get(url, timeout=timeout)
+                    r.raise_for_status()
+                    return r.text
+            except Exception:
+                import urllib.request
+
+                def http_get(url, timeout=10):
+                    with urllib.request.urlopen(url, timeout=timeout) as resp:
+                        return resp.read().decode('utf-8')
+
+            symbol = crypto.split('-')[0].upper()
+            cg_id = COINGECKO_IDS.get(symbol)
+            if not cg_id:
+                raise ValueError("Unknown symbol for fallback. Install yfinance/pandas or use BTC/ETH/XRP/SOL/LTC/DOGE")
+
+            url = f"https://api.coingecko.com/api/v3/coins/{cg_id}/market_chart?vs_currency=usd&days={days}"
+            txt = http_get(url)
+            import json
+            obj = json.loads(txt)
+            prices = obj.get('prices') or []
+            if not prices:
+                raise ValueError('CoinGecko returned no price data')
+            return [p[1] for p in prices]
+        except Exception as e:
+            raise ValueError(f"CoinGecko fallback failed: {e}")
+
+    def get_current_price(self, crypto):
+        ticker = crypto if '-' in crypto else f"{crypto}-USD"
+        try:
+            data = self.get_data(ticker, 1)
+            return _to_scalar(_close_series(data).iloc[-1])
+        except Exception:
+            closes = self.get_coingecko_close_prices(crypto, 30)
+            return float(closes[-1])
 
     def add_features(self, data):
         """Create features without TA-Lib"""
@@ -122,10 +205,10 @@ class CryptoPredictor:
 
     def predict_price(self, crypto, days=7):
         """Predict future price after X days"""
-    # Do NOT auto-train here. Training requires heavy dependencies and
-    # often times out on user machines. Prefer using a pre-trained model
-    # (loaded at startup) or the lightweight fallback implemented below.
-        
+        # Do NOT auto-train here. Training requires heavy dependencies and
+        # often times out on user machines. Prefer using a pre-trained model
+        # (loaded at startup) or the lightweight fallback implemented below.
+
         try:
             # Get recent data
             ticker = crypto if '-' in crypto else f"{crypto}-USD"
@@ -136,60 +219,11 @@ class CryptoPredictor:
                 # If yfinance/pandas aren't available or data download fails,
                 # fall back to CoinGecko public API (no heavy deps required).
                 try:
-                    # Prefer requests if available; otherwise use urllib (stdlib)
-                    try:
-                        import requests
-                        def http_get(url, timeout=10):
-                            r = requests.get(url, timeout=timeout)
-                            r.raise_for_status()
-                            return r.text
-                    except Exception:
-                        import urllib.request, json
-                        def http_get(url, timeout=10):
-                            with urllib.request.urlopen(url, timeout=timeout) as resp:
-                                return resp.read().decode('utf-8')
-
-                    # map common symbols to CoinGecko ids
-                    symbol = crypto.split('-')[0]
-                    cg_map = {
-                        'BTC': 'bitcoin',
-                        'ETH': 'ethereum',
-                        'XRP': 'ripple',
-                        'SOL': 'solana',
-                        'LTC': 'litecoin',
-                        'DOGE': 'dogecoin'
-                    }
-                    cg_id = cg_map.get(symbol)
-                    if not cg_id:
-                        raise ValueError("Unknown symbol for fallback. Install yfinance/pandas or use BTC/ETH/XRP/SOL/LTC/DOGE")
-
-                    url = f"https://api.coingecko.com/api/v3/coins/{cg_id}/market_chart?vs_currency=usd&days=30"
-                    txt = http_get(url)
-                    import json
-                    obj = json.loads(txt)
-                    prices = obj.get('prices') or []
-                    if not prices:
-                        raise ValueError('CoinGecko returned no price data')
-
-                    # prices is list of [timestamp, price]; build a simple closes list
-                    closes = [p[1] for p in prices]
-                    # create a minimal data-like object with Close series compatible access
-                    class SimpleData:
-                        def __init__(self, closes):
-                            self._closes = closes
-                        @property
-                        def Close(self):
-                            return self._closes
-                        def __len__(self):
-                            return len(self._closes)
-                        def iloc(self, idx):
-                            return self._closes[idx]
-                    # For our fallback we only need 'Close' values as a pandas-like series
-                    # We'll represent it as a dict-like object for downstream code.
+                    closes = self.get_coingecko_close_prices(crypto, 30)
                     data = {'Close': closes}
                 except Exception as e2:
                     raise ValueError(f"Data download failed and CoinGecko fallback failed: {e2}")
-            
+
             # Determine number of historical points available. If data is
             # a dict (CoinGecko fallback) use the 'Close' list length; if
             # it's a pandas DataFrame/Series use len(data).
@@ -245,7 +279,7 @@ class CryptoPredictor:
                 if isinstance(data, dict):
                     current_price = data['Close'][-1]
                 else:
-                    current_price = float(data['Close'].iloc[-1])
+                    current_price = _to_scalar(_close_series(data).iloc[-1])
 
                 projected_price = current_price * (1 + self.daily_return) ** days
                 return round(projected_price, 2)
@@ -268,29 +302,43 @@ class CryptoPredictor:
 # Initialize predictor (defer training until needed)
 predictor = CryptoPredictor()
 
+def load_model_artifact(target_predictor, model_path):
+    if not os.path.exists(model_path):
+        return False
+
+    try:
+        with open(model_path, 'rb') as fh:
+            blob = pickle.load(fh)
+        if isinstance(blob, dict):
+            # common keys fallback
+            model = blob.get('model') or blob.get('clf') or blob.get('estimator')
+            scaler = blob.get('scaler')
+            daily_return = blob.get('daily_return', target_predictor.daily_return)
+        else:
+            model = blob
+            scaler = None
+            daily_return = target_predictor.daily_return
+
+        if not callable(getattr(model, 'predict', None)) or not callable(getattr(scaler, 'transform', None)):
+            print(f"Warning: ignoring invalid model artifact at {model_path}")
+            return False
+
+        target_predictor.model = model
+        target_predictor.scaler = scaler
+        target_predictor.daily_return = daily_return
+        target_predictor.is_trained = True
+        print(f"Loaded pre-trained model from {model_path}")
+        return True
+    except Exception as e:
+        # Don't crash app if loading fails; fall back to training path when requested
+        print(f"Warning: failed to load pre-trained model: {e}")
+        return False
+
 # Try to load a bundled pre-trained model to avoid expensive local training.
 # The file is expected at repo-root `data/crypto_predictor.pkl` and can be
 # either the model object itself or a dict {'model': ..., 'scaler': ..., 'daily_return': ...}.
 MODEL_PATH = os.path.join(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')), 'data', 'crypto_predictor.pkl')
-if os.path.exists(MODEL_PATH):
-    try:
-        with open(MODEL_PATH, 'rb') as fh:
-            blob = pickle.load(fh)
-        if isinstance(blob, dict):
-            # common keys fallback
-            predictor.model = blob.get('model') or blob.get('clf') or blob.get('estimator')
-            predictor.scaler = blob.get('scaler', predictor.scaler)
-            predictor.daily_return = blob.get('daily_return', predictor.daily_return)
-        else:
-            predictor.model = blob
-
-        if predictor.model is not None:
-            predictor.is_trained = True
-            # best-effort message
-            print(f"Loaded pre-trained model from {MODEL_PATH}")
-    except Exception as e:
-        # Don't crash app if loading fails; fall back to training path when requested
-        print(f"Warning: failed to load pre-trained model: {e}")
+load_model_artifact(predictor, MODEL_PATH)
 
 # Flask Routes
 @app.route("/", methods=["GET", "POST"])
@@ -302,41 +350,46 @@ def index():
 
     if request.method == "POST":
         crypto_symbol = request.form.get("crypto", "BTC").strip().upper()
-        days_to_predict = min(int(request.form.get("days", 7)), 90)  # Max 90 days
-        
         try:
-            # Get current price
-            ticker = crypto_symbol if '-' in crypto_symbol else f"{crypto_symbol}-USD"
-            current_data = predictor.get_data(ticker, 1)
-            current_price = current_data['Close'].iloc[-1]
-
-            # Get predicted price
-            predicted_price = predictor.predict_price(crypto=crypto_symbol, days=days_to_predict)
-
-            # Coerce to numeric scalars to avoid pandas Series formatting errors
-            try:
-                current_price = _to_scalar(current_price)
-            except Exception:
-                current_price = float(current_price)
-            try:
-                predicted_price = _to_scalar(predicted_price)
-            except Exception:
-                predicted_price = float(predicted_price)
-            
-            prediction = {
-                'success': True,
-                'crypto': crypto_symbol,
-                'days': days_to_predict,
-                'current_price': f"${current_price:,.2f}",
-                'predicted_price': f"${predicted_price:,.2f}",
-                'change': f"{((predicted_price - current_price)/current_price*100 if current_price else 0):.1f}%",
-                'is_up': predicted_price > current_price
-            }
-        except Exception as e:
+            days_to_predict = _parse_prediction_days(request.form.get("days", 7))
+        except ValueError as e:
             prediction = {
                 'success': False,
                 'error': str(e)
             }
+
+        if prediction is None:
+            try:
+                # Get current price
+                current_price = predictor.get_current_price(crypto_symbol)
+
+                # Get predicted price
+                predicted_price = predictor.predict_price(crypto=crypto_symbol, days=days_to_predict)
+
+                # Coerce to numeric scalars to avoid pandas Series formatting errors
+                try:
+                    current_price = _to_scalar(current_price)
+                except Exception:
+                    current_price = float(current_price)
+                try:
+                    predicted_price = _to_scalar(predicted_price)
+                except Exception:
+                    predicted_price = float(predicted_price)
+
+                prediction = {
+                    'success': True,
+                    'crypto': crypto_symbol,
+                    'days': days_to_predict,
+                    'current_price': f"${current_price:,.2f}",
+                    'predicted_price': f"${predicted_price:,.2f}",
+                    'change': f"{((predicted_price - current_price)/current_price*100 if current_price else 0):.1f}%",
+                    'is_up': predicted_price > current_price
+                }
+            except Exception as e:
+                prediction = {
+                    'success': False,
+                    'error': str(e)
+                }
     
     # Fetch historical data for charting (for both GET and POST requests)
     try:
@@ -345,7 +398,7 @@ def index():
         
         # Prepare data for Chart.js
         chart_labels = historical_data.index.strftime('%Y-%m-%d').tolist()
-        chart_values = historical_data['Close'].tolist()
+        chart_values = _close_series(historical_data).tolist()
         
         chart_data = {
             'labels': chart_labels,

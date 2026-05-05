@@ -176,10 +176,10 @@
         var priceChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: {{ chart_data.labels | tojson }},
+                labels: {{ chart_data['labels'] | tojson }},
                 datasets: [{
                     label: 'Price (USD)',
-                    data: {{ chart_data.values | tojson }},
+                    data: {{ chart_data['values'] | tojson }},
                     borderColor: '#00e676', /* Vibrant green for line */
                     backgroundColor: 'rgba(0, 230, 118, 0.1)', /* Light fill */
                     tension: 0.4, /* Smoother lines */
