@@ -1,142 +1,221 @@
-# Crypto Price Predictor: A Gradient-Boosted Baseline for Short-Horizon Cryptocurrency Price Projection
+# Crypto Price Predictor
 
-## Abstract
+## A Research-Paper Style Documentation of a Lightweight Cryptocurrency Forecasting Baseline
 
-This repository implements a compact machine-learning system for cryptocurrency
-price projection in a Flask web application. The implemented estimator combines
-Yahoo Finance OHLCV observations, deterministic technical indicators, min-max
-normalization, and an XGBoost regression model. Given a cryptoasset symbol and a
-forecast horizon $h \in \{1,\ldots,90\}$, the system estimates a conditional
-price level from the latest engineered feature vector and then applies a
-geometric trend adjustment based on a stored empirical daily return. Inside the
-`predict_price()` routine, missing model/scaler state activates a lightweight
-recent-return estimator; if that routine cannot retrieve Yahoo Finance data, it
-can also fall back to CoinGecko for a small supported asset universe. The Flask
-route still uses Yahoo Finance separately for the current-price display and the
-historical chart.
+### Abstract
 
-The project is best understood as a reproducible educational baseline for
-machine-learning research in high-volatility digital asset markets. It is not a
-validated trading strategy. The current codebase does not implement a
-chronological train/test split, walk-forward backtest, transaction-cost model,
-position-sizing rule, or risk-adjusted portfolio evaluation. This README
-therefore documents the mathematical object implemented by the repository, its
-derivation, its assumptions, and its limitations in the style of a research
-paper.
+This repository implements a compact cryptocurrency price-projection system
+served through a Flask web application. The implemented pipeline collects daily
+OHLCV data from Yahoo Finance, constructs deterministic technical indicators,
+normalizes the resulting feature matrix with min-max scaling, and applies an
+XGBoost regression model when a compatible serialized model and scaler are
+available. If the trained model path is unavailable, the application falls back
+to a recent-return heuristic that compounds the current price by the mean of the
+latest observed daily returns.
 
-**Keywords:** cryptocurrency forecasting, XGBoost, gradient boosting, OHLCV,
-technical indicators, time-series regression, geometric return projection,
-quantitative finance.
+This README documents the repository as a research artifact. It states the
+mathematical estimator implemented by the code, derives the feature
+transformations and boosting objective, visualizes the runtime data flow, and
+identifies the empirical limitations that would need to be resolved before the
+project could support trading or investment claims. The system is best
+interpreted as an educational baseline for short-horizon digital-asset
+forecasting, not as a validated strategy.
+
+**Keywords:** cryptocurrency forecasting, OHLCV data, XGBoost, gradient
+boosting, technical indicators, min-max scaling, time-series regression, Flask,
+Yahoo Finance, financial machine learning.
 
 ## 1. Introduction
 
-Cryptocurrency price prediction is a difficult non-stationary forecasting
-problem. Prices are driven by market microstructure, liquidity cycles,
-macroeconomic conditions, leverage, exchange-specific frictions, social
-attention, protocol events, and regime shifts. In such an environment, a small
-supervised learning system should be treated as a baseline estimator rather than
-as evidence of exploitable alpha.
+Cryptocurrency forecasting is a non-stationary time-series problem with
+heavy-tailed returns, volatility clustering, liquidity fragmentation, regime
+changes, and exogenous shocks. A practical baseline model should therefore be
+judged by whether its assumptions are explicit and testable, not by whether it
+produces a visually plausible point forecast.
 
-This repository operationalizes that baseline as a web application. A user
-selects a cryptocurrency, chooses a forecast horizon, and receives a projected
-USD price. The prediction path is:
+This repository implements such a baseline. A user selects an asset symbol and a
+forecast horizon, and the Flask application returns a projected USD price, a
+percentage change, and a historical price chart. The core prediction routine can
+be summarized as:
 
-1. fetch recent market observations,
-2. construct deterministic price-history features,
-3. normalize the features,
-4. estimate a conditional close price with XGBoost when a trained model is
+1. transform a crypto symbol into a Yahoo Finance ticker,
+2. download recent OHLCV observations,
+3. construct moving-average, momentum, and volatility features,
+4. scale the feature vector,
+5. estimate a same-period close-price level with XGBoost when a trained model is
    available,
-5. compound the stored or fallback empirical daily return over the requested
-   horizon,
-6. render the current price, projected price, percentage change, and historical
-   price chart.
+6. project the estimated level forward by compounding an empirical daily return,
+7. fall back to a recent-return heuristic when the model or scaler is missing.
 
-The method is deliberately lightweight: it avoids sequence models, order-book
-features, news embeddings, and cross-asset factor models. Its scientific value
-is in making the baseline explicit and auditable.
+The system is intentionally small. It does not use order-book depth, exchange
+flows, market sentiment, macro features, cross-asset factors, sequence models, or
+probabilistic intervals. This constraint makes the method auditable: every
+transformation can be written down and inspected.
 
-## 2. System Visualization
+## 2. Contributions
 
-Figure 1 summarizes the implemented forecasting system.
+This repository contributes:
+
+- a runnable Flask interface for cryptocurrency price projection,
+- an explicit feature map built from OHLCV observations,
+- an XGBoost-based regression baseline with a serialized-model loading path,
+- a dependency-light fallback estimator based on recent arithmetic returns,
+- an in-browser Chart.js visualization of 180 days of historical prices,
+- a documented research protocol for turning the baseline into a falsifiable
+  forecasting experiment.
+
+The contribution is methodological and educational. The current repository does
+not claim statistically significant predictive skill.
+
+## 3. System Overview
+
+The executable application is implemented in `src/app.py`. The root-level
+`app.py` is empty in the current repository state. The user interface is defined
+in `templates/index.html`.
+
+| Layer | Implementation |
+| --- | --- |
+| Web framework | Flask |
+| UI template | Jinja-compatible HTML template |
+| Primary market data source | `yfinance.download` |
+| Fallback market data source | CoinGecko market-chart endpoint for selected symbols |
+| Training window | 365 daily observations when `train_model()` is invoked |
+| Prediction data window | 30 daily observations inside `predict_price()` |
+| Chart window | 180 daily observations |
+| Engineered features | `SMA_7`, `SMA_14`, `Momentum`, `Volatility` |
+| Normalizer | `sklearn.preprocessing.MinMaxScaler` |
+| Primary estimator | `xgboost.XGBRegressor` |
+| Serialized artifact path | `data/crypto_predictor.pkl` |
+| Forecast horizon | integer horizon capped at 90 days |
+
+## 4. Visual Demonstration
+
+### 4.1 End-to-End Data Flow
 
 ```mermaid
 flowchart LR
-    A["User selects asset and horizon h"] --> B["Ticker normalization<br/>BTC -> BTC-USD"]
-    B --> C["Yahoo Finance OHLCV<br/>Open, High, Low, Close, Volume"]
-    C --> D["Feature engineering<br/>SMA(7), SMA(14), momentum(4), volatility(7)"]
-    D --> E["MinMaxScaler<br/>feature-wise affine normalization"]
-    E --> F["XGBRegressor<br/>squared-error tree ensemble"]
-    F --> G["Base close estimate"]
-    D --> H["Stored or fallback<br/>mean daily return"]
-    H --> I["Geometric projection<br/>P_hat(t+h)=P_base(1+r_bar)^h"]
-    G --> I
-    I --> J["Flask response<br/>price, change, direction"]
-    C --> K["Chart.js visualization<br/>180-day close history"]
-    K --> J
-    C -. "inside predict_price() if unavailable" .-> L["CoinGecko fallback"]
-    L --> M["Recent-return heuristic"]
-    M --> I
-    C --> N["Route-level current price<br/>and chart remain Yahoo-dependent"]
-    N --> J
+    U["User input<br/>asset symbol and horizon"] --> T["Ticker normalization<br/>BTC to BTC-USD"]
+    T --> Y["Yahoo Finance<br/>daily OHLCV"]
+    Y --> F["Feature map<br/>SMA, momentum, volatility"]
+    F --> S["MinMaxScaler<br/>feature-wise affine map"]
+    S --> X["XGBRegressor<br/>tree ensemble"]
+    X --> B["Base close estimate"]
+    F --> R["Stored or recent<br/>mean daily return"]
+    R --> G["Geometric projection"]
+    B --> G
+    G --> O["Rendered forecast<br/>price, change, direction"]
+    Y --> C["Chart.js<br/>180-day close history"]
+    C --> O
+    Y -. "if unavailable inside predict_price" .-> CG["CoinGecko fallback"]
+    CG -.-> H["Recent-return heuristic"]
+    H -.-> G
 ```
 
-**Figure 1.** Implemented data and prediction flow. Solid arrows denote the
-primary Yahoo Finance and XGBoost path; dashed arrows denote the fallback path.
+**Figure 1.** Runtime path for the application. Solid arrows denote the primary
+Yahoo Finance and model path. Dashed arrows denote the fallback path used inside
+the prediction routine.
 
-## 3. Repository Object of Study
+### 4.2 Request and Response Sequence
 
-The empirical object implemented by the repository is a supervised regression
-pipeline.
+```mermaid
+sequenceDiagram
+    participant User
+    participant Flask as Flask route
+    participant Predictor as CryptoPredictor
+    participant Yahoo as Yahoo Finance
+    participant Model as Model or fallback
+    participant Browser as Chart.js UI
 
-| Component | Implementation |
-| --- | --- |
-| Application layer | Flask web app in `src/app.py` |
-| User interface | Jinja/HTML template in `templates/index.html` |
-| Primary data source | Yahoo Finance through `yfinance.download` |
-| Fallback data source | CoinGecko public market-chart endpoint for selected symbols |
-| Raw market variables | Open, High, Low, Close, Volume |
-| Engineered variables | 7-day SMA, 14-day SMA, 4-day momentum, 7-day volatility |
-| Scaling | `sklearn.preprocessing.MinMaxScaler` |
-| Primary model | `xgboost.XGBRegressor(objective="reg:squarederror", n_estimators=150)` |
-| Optional serialized model | `data/crypto_predictor.pkl` |
-| Forecast horizon | User-selected integer, capped at 90 days |
-| Visualization | 180-day historical close-price line chart via Chart.js |
+    User->>Flask: POST symbol and horizon
+    Flask->>Yahoo: fetch current close
+    Flask->>Predictor: predict_price(symbol, horizon)
+    Predictor->>Yahoo: fetch recent OHLCV
+    Predictor->>Predictor: add_features(data)
+    alt model and scaler available
+        Predictor->>Model: scale latest row and predict base close
+    else model path unavailable
+        Predictor->>Model: compute recent mean return
+    end
+    Model-->>Predictor: projected price
+    Flask->>Yahoo: fetch 180-day chart history
+    Flask-->>Browser: render forecast and chart data
+    Browser-->>User: price, percentage change, historical chart
+```
 
-The top-level `app.py` file is empty; the executable application entry point is
-`src/app.py`.
+**Figure 2.** Web request lifecycle from form submission to rendered forecast.
 
-## 4. Market Data and Notation
+### 4.3 Conceptual Forecast Geometry
 
-Let a cryptoasset be indexed by $a$, and let daily time be indexed by
-$t=1,\ldots,T$. The raw OHLCV observation is
+The final forecast is the product of a local price-level estimate and a
+geometric trend adjustment. Holding the base estimate fixed, the horizon
+projection behaves as follows:
+
+| Mean daily return | 7-day multiplier | 30-day multiplier | Interpretation |
+| ---: | ---: | ---: | --- |
+| `-2.0%` | `0.8681` | `0.5455` | strong negative drift assumption |
+| `-0.5%` | `0.9655` | `0.8604` | mild negative drift assumption |
+| `0.0%` | `1.0000` | `1.0000` | neutral trend assumption |
+| `0.5%` | `1.0355` | `1.1614` | mild positive drift assumption |
+| `2.0%` | `1.1487` | `1.8114` | strong positive drift assumption |
+
+**Figure 3.** Sensitivity of the geometric projection term. The implemented
+model is highly sensitive to the empirical daily return when the requested
+horizon grows.
+
+## 5. Market Data and Notation
+
+Let asset identity be indexed by $a$, and let daily time be indexed by
+$t = 1,\ldots,T$. The raw market observation is
 
 $$
 z_t^{(a)}
 =
-\left(O_t^{(a)}, H_t^{(a)}, L_t^{(a)}, C_t^{(a)}, V_t^{(a)}\right),
+\left(
+O_t^{(a)},
+H_t^{(a)},
+L_t^{(a)},
+C_t^{(a)},
+V_t^{(a)}
+\right),
 $$
 
 where $O_t$ is open price, $H_t$ is high price, $L_t$ is low price,
-$C_t$ is close price, and $V_t$ is traded volume. For readability, the asset
-superscript is omitted below.
+$C_t$ is close price, and $V_t$ is volume. For readability, the asset
+superscript is omitted in later equations.
 
-The repository trains on one year of daily data when `train_model()` is called:
+The observed historical sample is
 
 $$
-\mathcal{D}_{365} = \{z_t\}_{t=1}^{365}.
+\mathcal{D}_T = \{z_t\}_{t=1}^{T}.
 $$
 
-For web predictions, the model fetches recent data and constructs the same
-feature map. Charting uses a separate 180-day close-price history.
+When `train_model()` is called, the repository requests one year of daily
+observations:
 
-## 5. Feature Engineering
+$$
+T_{\mathrm{train}} = 365.
+$$
 
-The feature map $\phi_t$ transforms OHLCV observations into a numerical vector.
-After feature construction, rows with missing rolling-window values are dropped.
+At prediction time, the repository requests a shorter recent window:
 
-### 5.1 Simple Moving Averages
+$$
+T_{\mathrm{predict}} = 30.
+$$
 
-For window length $k$, the simple moving average of close prices is
+The charting path separately requests:
+
+$$
+T_{\mathrm{chart}} = 180.
+$$
+
+## 6. Feature Map
+
+The repository transforms each OHLCV row into an eight-dimensional supervised
+learning feature vector after dropping rows with missing rolling-window values.
+
+### 6.1 Simple Moving Averages
+
+For a rolling window $k$, the simple moving average is
 
 $$
 \mathrm{SMA}_k(t)
@@ -145,53 +224,53 @@ $$
 \sum_{i=0}^{k-1} C_{t-i}.
 $$
 
-The code uses two windows:
+The implemented windows are $k=7$ and $k=14$:
 
 $$
 \mathrm{SMA}_7(t)
 =
 \frac{1}{7}
-\left(C_t+C_{t-1}+\cdots+C_{t-6}\right),
+\sum_{i=0}^{6} C_{t-i},
 $$
 
 $$
 \mathrm{SMA}_{14}(t)
 =
 \frac{1}{14}
-\left(C_t+C_{t-1}+\cdots+C_{t-13}\right).
+\sum_{i=0}^{13} C_{t-i}.
 $$
 
-The short moving average captures faster local price level information, while
-the 14-day average smooths over a longer local horizon. Their inclusion gives a
-tree model access to level and trend-like comparisons, for example whether
-$\mathrm{SMA}_7(t) > \mathrm{SMA}_{14}(t)$.
+The moving averages expose local price-level structure. A tree model can then
+learn nonlinear conditions such as whether short-run price level exceeds
+longer-run price level:
 
-### 5.2 Momentum
+$$
+\mathrm{SMA}_7(t) > \mathrm{SMA}_{14}(t).
+$$
 
-The implemented 4-day momentum feature is the close-price difference
+### 6.2 Momentum
+
+The implemented momentum feature is a four-day close-price difference:
 
 $$
 M_4(t) = C_t - C_{t-4}.
 $$
 
-This is an additive momentum statistic. A positive value indicates that the
-current close is above the close four observations earlier; a negative value
-indicates short-window price deterioration. Unlike a return, this statistic is
-not scale invariant:
+This is additive momentum, not percentage momentum. The scale-dependent nature
+is important:
 
 $$
 C_t - C_{t-4}
 \neq
-\frac{C_t-C_{t-4}}{C_{t-4}}.
+\frac{C_t - C_{t-4}}{C_{t-4}}.
 $$
 
-For assets with very different nominal price scales, this motivates the later
-feature normalization step.
+For assets with different nominal price levels, this motivates explicit feature
+normalization.
 
-### 5.3 Rolling Volatility
+### 6.3 Rolling Volatility
 
-The implemented 7-day volatility feature is the rolling sample standard
-deviation of close prices:
+The code uses a seven-day rolling sample standard deviation of close prices:
 
 $$
 \sigma_7(t)
@@ -199,26 +278,35 @@ $$
 \sqrt{
 \frac{1}{7-1}
 \sum_{i=0}^{6}
-\left(C_{t-i}-\mathrm{SMA}_7(t)\right)^2
+\left(C_{t-i} - \mathrm{SMA}_7(t)\right)^2
 }.
 $$
 
-This quantity measures local dispersion of prices around their 7-day mean. It is
-a price-level volatility proxy rather than a return-volatility estimator. A
-return-volatility estimator would instead use
+This is a price-level volatility proxy. A return-volatility estimator would use
+arithmetic returns
 
 $$
-r_t=\frac{C_t-C_{t-1}}{C_{t-1}}
-\quad\text{or}\quad
-\ell_t=\log C_t-\log C_{t-1}.
+r_t = \frac{C_t - C_{t-1}}{C_{t-1}}
 $$
 
-The implemented system uses the price-level version because it follows directly
-from `data["Close"].rolling(7).std()`.
+or log returns
 
-### 5.4 Complete Feature Vector
+$$
+\ell_t = \log C_t - \log C_{t-1}.
+$$
 
-The model target is the close price $y_t=C_t$. The training feature vector is
+The implemented repository uses price-level dispersion because it follows
+directly from `data["Close"].rolling(7).std()`.
+
+### 6.4 Complete Feature Vector
+
+After feature construction, the model target is the same-day close:
+
+$$
+y_t = C_t.
+$$
+
+The feature vector is
 
 $$
 x_t =
@@ -234,8 +322,7 @@ M_4(t),\,
 \right]^\top.
 $$
 
-Equivalently, if $X\in\mathbb{R}^{n\times p}$ is the design matrix after
-dropping missing rows, then $p=8$ and
+Let $p=8$ be the feature dimension. The design matrix is
 
 $$
 X =
@@ -244,7 +331,8 @@ x_1^\top \\
 x_2^\top \\
 \vdots \\
 x_n^\top
-\end{bmatrix},
+\end{bmatrix}
+\in \mathbb{R}^{n \times p},
 \qquad
 y =
 \begin{bmatrix}
@@ -255,195 +343,231 @@ C_n
 \end{bmatrix}.
 $$
 
-Because the target is same-day close and the feature vector contains same-day
-open, high, low, volume, and rolling features that include $C_t$, this is not
-a pure next-day forecasting design. The repository then creates a future
-projection by applying a geometric return adjustment to the model output.
+The use of same-day high, low, volume, and rolling statistics containing
+$C_t$ means the trained model is not a strict next-day forecasting model. It
+is a same-period close-level regression that is later pushed forward by a
+geometric trend rule.
 
-## 6. Feature Scaling
+## 7. Normalization
 
-The repository applies feature-wise min-max scaling before model fitting:
-
-$$
-\tilde{x}_{t,j}
-=
-\frac{x_{t,j}-m_j}{M_j-m_j},
-$$
-
-where
+The repository applies min-max scaling to the feature matrix before fitting the
+XGBoost model. For feature $j$, define
 
 $$
-m_j = \min_{1\leq t\leq n} x_{t,j},
+m_j = \min_{1 \leq i \leq n} X_{i,j},
 \qquad
-M_j = \max_{1\leq t\leq n} x_{t,j}.
+M_j = \max_{1 \leq i \leq n} X_{i,j}.
 $$
 
-Thus each transformed feature satisfies $\tilde{x}_{t,j}\in[0,1]$ when future
-values remain within the training range. In vector form,
+The scaled feature is
 
 $$
-\tilde{x}_t = S(x_t-m),
+\widetilde{X}_{i,j}
+=
+\frac{X_{i,j} - m_j}{M_j - m_j}.
+$$
+
+In vector form, the transformation can be written as
+
+$$
+\widetilde{x}_i
+=
+D^{-1}(x_i - m),
 $$
 
 where
 
 $$
-S=\mathrm{diag}\left(
-\frac{1}{M_1-m_1},\ldots,\frac{1}{M_p-m_p}
+D =
+\mathrm{diag}
+\left(
+M_1-m_1,\,
+M_2-m_2,\,
+\ldots,\,
+M_p-m_p
 \right).
 $$
 
-Tree ensembles do not generally require monotone feature scaling to find
-threshold splits, but scaling is still useful here because it regularizes the
-input representation, improves interoperability with serialized pipelines, and
-makes the feature map easier to compare across variables with very different
-units.
-
-## 7. Supervised Learning Objective
-
-The primary estimator is an XGBoost regression model. It represents the fitted
-function as an additive ensemble of regression trees:
+If future values remain inside the observed training range, each scaled feature
+lies in the interval $[0,1]$. If future values exceed the training extrema,
+min-max scaling can produce values below 0 or above 1:
 
 $$
-\hat{f}_K(\tilde{x})
+x_{*,j} > M_j
+\quad \Rightarrow \quad
+\widetilde{x}_{*,j} > 1.
+$$
+
+This matters in cryptocurrency markets because new highs, new lows, and volume
+regime changes are common.
+
+## 8. Primary Estimator
+
+The primary estimator is `XGBRegressor` configured with squared-error
+regression and 150 boosting rounds:
+
+```python
+XGBRegressor(objective="reg:squarederror", n_estimators=150)
+```
+
+The model represents the prediction function as an additive ensemble of
+regression trees:
+
+$$
+\widehat{f}_K(\widetilde{x})
 =
-\sum_{k=1}^{K} f_k(\tilde{x}),
+\sum_{k=1}^{K} f_k(\widetilde{x}),
 \qquad
-f_k \in \mathcal{F},
+f_k \in \mathcal{F}.
 $$
 
-where $\mathcal{F}$ is the space of CART-style regression trees. Each tree maps
-an input vector to a leaf weight:
+Each tree maps an input vector to a leaf score:
 
 $$
-f_k(\tilde{x}) = w_{q_k(\tilde{x})},
+f_k(\widetilde{x}) = w_{q_k(\widetilde{x})},
 $$
 
-where $q_k(\cdot)$ assigns the observation to a leaf and $w$ is the vector of
-leaf scores.
+where $q_k(\cdot)$ assigns the observation to a leaf and $w$ contains the
+leaf weights.
 
-The repository configures squared-error regression. For observed target $y_i$,
-the prediction after $K$ trees is $\hat{y}_i^{(K)}$, and the empirical
-squared-error loss is
+The empirical squared-error loss is
 
 $$
-\mathcal{L}(\theta)
+\mathcal{L}
 =
 \sum_{i=1}^{n}
-\left(y_i-\hat{y}_i\right)^2.
+\left(y_i - \widehat{y}_i\right)^2.
 $$
 
-XGBoost augments empirical loss with tree complexity penalties. A common
-regularized objective for tree $f$ is
+XGBoost uses a regularized objective of the form
 
 $$
 \mathrm{Obj}
 =
-\sum_{i=1}^{n} l(y_i,\hat{y}_i)
+\sum_{i=1}^{n}
+l(y_i,\widehat{y}_i)
 +
-\sum_{k=1}^{K} \Omega(f_k),
+\sum_{k=1}^{K}\Omega(f_k),
 $$
 
-with
+with tree complexity penalty
 
 $$
 \Omega(f)
 =
 \gamma T_f
 +
-\frac{\lambda}{2}\sum_{j=1}^{T_f} w_j^2,
+\frac{\lambda}{2}
+\sum_{j=1}^{T_f}w_j^2.
 $$
 
-where $T_f$ is the number of leaves, $w_j$ is the score of leaf $j$,
-$\gamma$ penalizes adding leaves, and $\lambda$ penalizes large leaf weights.
+Here $T_f$ is the number of leaves in tree $f$, $w_j$ is the score in leaf
+$j$, $\gamma$ penalizes additional leaves, and $\lambda$ penalizes large
+leaf weights.
 
-## 8. Derivation of the XGBoost Tree Update
+## 9. Boosting Derivation
 
-At boosting iteration $k$, the model has prediction
+At boosting iteration $k$, the prediction before adding the new tree is
 
 $$
-\hat{y}_i^{(k-1)}
+\widehat{y}_i^{(k-1)}
 =
-\sum_{s=1}^{k-1} f_s(\tilde{x}_i).
+\sum_{s=1}^{k-1} f_s(\widetilde{x}_i).
 $$
 
-The next tree $f_k$ is chosen to minimize
+The next tree is chosen to minimize
 
 $$
 \mathrm{Obj}^{(k)}
 =
 \sum_{i=1}^{n}
-l\left(y_i,\hat{y}_i^{(k-1)}+f_k(\tilde{x}_i)\right)
+l\left(
+y_i,
+\widehat{y}_i^{(k-1)} + f_k(\widetilde{x}_i)
+\right)
 +
 \Omega(f_k).
 $$
 
-Using a second-order Taylor approximation around $\hat{y}_i^{(k-1)}$,
+Using a second-order Taylor approximation around
+$\widehat{y}_i^{(k-1)}$,
 
 $$
-l\left(y_i,\hat{y}_i^{(k-1)}+f_k(\tilde{x}_i)\right)
+l\left(
+y_i,
+\widehat{y}_i^{(k-1)} + f_k(\widetilde{x}_i)
+\right)
 \approx
-l\left(y_i,\hat{y}_i^{(k-1)}\right)
+l\left(y_i,\widehat{y}_i^{(k-1)}\right)
 +
-g_i f_k(\tilde{x}_i)
+g_i f_k(\widetilde{x}_i)
 +
-\frac{1}{2} h_i f_k(\tilde{x}_i)^2,
+\frac{1}{2}h_i f_k(\widetilde{x}_i)^2,
 $$
 
 where
 
 $$
 g_i =
-\frac{\partial l(y_i,\hat{y})}{\partial \hat{y}}
-\bigg|_{\hat{y}=\hat{y}_i^{(k-1)}},
+\frac{\partial l(y_i,\widehat{y})}{\partial \widehat{y}}
+\bigg|_{\widehat{y}=\widehat{y}_i^{(k-1)}},
 \qquad
 h_i =
-\frac{\partial^2 l(y_i,\hat{y})}{\partial \hat{y}^2}
-\bigg|_{\hat{y}=\hat{y}_i^{(k-1)}}.
+\frac{\partial^2 l(y_i,\widehat{y})}{\partial \widehat{y}^2}
+\bigg|_{\widehat{y}=\widehat{y}_i^{(k-1)}}.
 $$
 
-For squared error
+For squared error,
 
 $$
-l(y_i,\hat{y}_i)=(y_i-\hat{y}_i)^2,
+l(y_i,\widehat{y}_i)
+=
+\left(y_i-\widehat{y}_i\right)^2,
 $$
 
-the derivatives are
+so the derivatives are
 
 $$
-g_i = 2(\hat{y}_i^{(k-1)}-y_i),
+g_i = 2\left(\widehat{y}_i^{(k-1)}-y_i\right),
 \qquad
 h_i = 2.
 $$
 
-Ignoring the constant term independent of $f_k$, the approximate objective is
+Ignoring constants independent of the new tree gives
 
 $$
 \widetilde{\mathrm{Obj}}^{(k)}
 =
 \sum_{i=1}^{n}
 \left[
-g_i f_k(\tilde{x}_i)
+g_i f_k(\widetilde{x}_i)
 +
-\frac{1}{2}h_i f_k(\tilde{x}_i)^2
+\frac{1}{2}h_i f_k(\widetilde{x}_i)^2
 \right]
 +
 \gamma T
 +
-\frac{\lambda}{2}\sum_{j=1}^{T}w_j^2.
+\frac{\lambda}{2}
+\sum_{j=1}^{T}w_j^2.
 $$
 
-Let $I_j=\{i:q(\tilde{x}_i)=j\}$ be the observations assigned to leaf $j$.
-Since $f_k(\tilde{x}_i)=w_j$ for $i\in I_j$, define the aggregated first and
-second derivatives
+Let
 
 $$
-G_j=\sum_{i\in I_j}g_i,
+I_j = \{i : q(\widetilde{x}_i)=j\}
+$$
+
+be the observations assigned to leaf $j$. Define the leaf-level gradient and
+Hessian sums:
+
+$$
+G_j = \sum_{i \in I_j} g_i,
 \qquad
-H_j=\sum_{i\in I_j}h_i.
+H_j = \sum_{i \in I_j} h_i.
 $$
 
-Then the objective decomposes by leaf:
+Because $f_k(\widetilde{x}_i)=w_j$ for observations in leaf $j$, the
+objective decomposes by leaf:
 
 $$
 \widetilde{\mathrm{Obj}}^{(k)}
@@ -458,15 +582,15 @@ G_jw_j
 \gamma T.
 $$
 
-The optimal leaf weight is obtained by differentiating with respect to $w_j$:
+Differentiating with respect to $w_j$ gives
 
 $$
 \frac{\partial \widetilde{\mathrm{Obj}}^{(k)}}{\partial w_j}
 =
-G_j+(H_j+\lambda)w_j.
+G_j + (H_j+\lambda)w_j.
 $$
 
-Setting the derivative to zero gives
+Setting the derivative equal to zero yields the optimal leaf weight:
 
 $$
 w_j^\star
@@ -475,7 +599,8 @@ w_j^\star
 \frac{G_j}{H_j+\lambda}.
 $$
 
-Substituting this optimum into the objective gives the score of a tree structure:
+Substituting $w_j^\star$ into the objective gives the score for a fixed tree
+structure:
 
 $$
 \widetilde{\mathrm{Obj}}^{(k)}(q)
@@ -488,7 +613,7 @@ $$
 \gamma T.
 $$
 
-For a proposed split of a node into left and right children, the split gain is
+For a candidate split into left and right children, the split gain is
 
 $$
 \mathrm{Gain}
@@ -505,208 +630,304 @@ $$
 \gamma.
 $$
 
-A split is attractive when it sufficiently reduces the approximate regularized
-loss. This is the mechanism by which XGBoost learns nonlinear interactions among
-raw OHLCV variables, moving averages, momentum, and volatility.
+A split is selected when the reduction in approximate regularized loss is large
+enough to justify the additional tree complexity.
 
-## 9. Forecast Construction
+## 10. Forecast Construction
 
-The trained model produces a base estimate from the latest feature vector:
+The primary model path first predicts a base close estimate from the latest
+scaled feature row:
 
 $$
-\hat{C}_{t,\text{base}}
+\widehat{C}_{t,\mathrm{base}}
 =
-\hat{f}_K(\tilde{x}_t).
+\widehat{f}_K(\widetilde{x}_t).
 $$
 
-The full model path then compounds this base estimate by the object's stored
-daily arithmetic return. That value is assigned during `train_model()` or loaded
-from `data/crypto_predictor.pkl` when the artifact provides a `daily_return`
-field. In training, the daily return is estimated as
+During training, the application stores the empirical mean daily arithmetic
+return:
 
 $$
-\bar{r}
+\overline{r}
 =
 \frac{1}{n-1}
 \sum_{s=2}^{n}
 \frac{C_s-C_{s-1}}{C_{s-1}}.
 $$
 
-If a compatible model and scaler are loaded without a stored daily return, the
-default value is $\bar{r}=0$, so the geometric adjustment is neutral.
-
-For a requested horizon $h$, the final projected price is
+For requested horizon $h$, the repository projects the base estimate as
 
 $$
-\hat{C}_{t+h}
+\widehat{C}_{t+h}
 =
-\hat{C}_{t,\text{base}}(1+\bar{r})^h.
+\widehat{C}_{t,\mathrm{base}}
+\left(1+\overline{r}\right)^h.
 $$
 
-This formula follows from recursively applying a constant expected daily return:
+This formula follows from recursive compounding. For one step,
 
 $$
-\hat{C}_{t+1}=\hat{C}_{t,\text{base}}(1+\bar{r}),
-$$
-
-$$
-\hat{C}_{t+2}
+\widehat{C}_{t+1}
 =
-\hat{C}_{t+1}(1+\bar{r})
+\widehat{C}_{t,\mathrm{base}}
+\left(1+\overline{r}\right).
+$$
+
+For two steps,
+
+$$
+\widehat{C}_{t+2}
 =
-\hat{C}_{t,\text{base}}(1+\bar{r})^2,
-$$
-
-and, by induction,
-
-$$
-\hat{C}_{t+h}
+\widehat{C}_{t+1}
+\left(1+\overline{r}\right)
 =
-\hat{C}_{t,\text{base}}(1+\bar{r})^h.
+\widehat{C}_{t,\mathrm{base}}
+\left(1+\overline{r}\right)^2.
 $$
 
-The reported projected change is
+By induction,
+
+$$
+\widehat{C}_{t+h}
+=
+\widehat{C}_{t,\mathrm{base}}
+\left(1+\overline{r}\right)^h.
+$$
+
+The UI reports the projected percentage change as
 
 $$
 \Delta_h
 =
-\frac{\hat{C}_{t+h}-C_t}{C_t}\times 100\%.
+\frac{
+\widehat{C}_{t+h} - C_t
+}{
+C_t
+}
+\times 100\%.
 $$
 
-The UI marks the prediction as upward when $\hat{C}_{t+h}>C_t$ and downward
-otherwise.
-
-## 10. Fallback Estimator
-
-If the primary model or scaler is missing, the repository uses a reduced
-estimator. It computes recent consecutive returns from available close prices,
-takes the mean of the last seven returns when possible, and projects the current
-close geometrically:
+The prediction is displayed as upward when
 
 $$
-\bar{r}_{7}
+\widehat{C}_{t+h} > C_t,
+$$
+
+and downward otherwise.
+
+## 11. Fallback Estimator
+
+When either `self.model` or `self.scaler` is missing, the application avoids the
+XGBoost path and uses recent arithmetic returns. For a close-price sequence
+$\{C_1,\ldots,C_n\}$, the one-period returns are
+
+$$
+r_i = \frac{C_i-C_{i-1}}{C_{i-1}},
+\qquad
+i=2,\ldots,n.
+$$
+
+The fallback mean uses at most the latest seven returns:
+
+$$
+m = \min(7,n-1),
+$$
+
+$$
+\overline{r}_{\mathrm{recent}}
 =
 \frac{1}{m}
-\sum_{j=1}^{m} r_{n-j+1},
-\qquad
-m=\min(7,n-1),
+\sum_{j=0}^{m-1}
+r_{n-j}.
 $$
 
+The fallback forecast is
+
 $$
-\hat{C}_{t+h}^{\text{fallback}}
+\widehat{C}_{t+h}^{\mathrm{fallback}}
 =
-C_t(1+\bar{r}_{7})^h.
+C_t
+\left(1+\overline{r}_{\mathrm{recent}}\right)^h.
 $$
 
-Inside `predict_price()`, the CoinGecko fallback maps a small set of common
-symbols to asset identifiers: BTC, ETH, XRP, SOL, LTC, and DOGE. This path avoids
-the heavier machine-learning dependencies but is correspondingly less expressive.
-It does not replace the route-level Yahoo Finance calls used for the displayed
-current price and chart.
+Inside `predict_price()`, Yahoo Finance failures can trigger a CoinGecko
+fallback for a small supported symbol set:
 
-## 11. Algorithmic Summary
+| Symbol | CoinGecko identifier |
+| --- | --- |
+| BTC | `bitcoin` |
+| ETH | `ethereum` |
+| XRP | `ripple` |
+| SOL | `solana` |
+| LTC | `litecoin` |
+| DOGE | `dogecoin` |
+
+This fallback only applies inside the prediction routine. The route-level
+current-price display and 180-day chart still request Yahoo Finance data.
+
+## 12. Algorithm
 
 ```text
 Input:
-    crypto symbol a
-    horizon h <= 90
+    asset symbol a
+    forecast horizon h in {1, ..., 90}
 
-Primary path:
-    1. Convert symbol to Yahoo Finance ticker, e.g. BTC -> BTC-USD.
-    2. Download OHLCV observations.
-    3. Construct SMA_7, SMA_14, 4-day momentum, and 7-day volatility.
+Prediction routine:
+    1. Normalize a into a Yahoo Finance ticker.
+    2. Download recent OHLCV observations.
+    3. Construct SMA_7, SMA_14, Momentum, and Volatility.
     4. Drop rows with missing rolling-window values.
-    5. If a model and scaler exist:
-         a. Scale the latest feature row.
-         b. Predict base close using XGBRegressor.
-         c. Read stored daily_return from training, artifact loading, or default state.
-         d. Project base close by (1 + daily_return)^h.
-    6. If model/scaler do not exist:
-         a. Compute recent daily returns.
-         b. Project current close by (1 + recent mean return)^h.
-    7. Display current price, projected price, percentage change, and direction.
+    5. If model and scaler are available:
+         a. Drop the Close column from the latest feature row.
+         b. Apply the stored MinMaxScaler.
+         c. Predict a base close with XGBRegressor.
+         d. Compound the base close by the stored daily_return.
+    6. Otherwise:
+         a. Compute recent close-to-close arithmetic returns.
+         b. Average the latest available returns up to seven observations.
+         c. Compound the current close by the recent mean return.
+    7. Round the projected price to two decimals.
 
-Chart path:
-    1. Download 180 days of close prices.
-    2. Render a Chart.js line plot in the browser.
-
-Route-level note:
-    The current price display and chart request Yahoo Finance data directly.
-    Therefore, the CoinGecko fallback is a prediction-routine fallback, not a
-    complete replacement for every web-route data dependency.
+Route routine:
+    1. Fetch current close for display.
+    2. Call the prediction routine.
+    3. Compute projected percentage change.
+    4. Fetch 180 days of close prices for Chart.js.
+    5. Render the HTML template.
 ```
 
-## 12. Research Interpretation
+## 13. Statistical Interpretation
 
-The implemented estimator can be interpreted as a hybrid of conditional
-regression and deterministic trend extrapolation:
+The implemented model can be decomposed as
 
 $$
-\hat{C}_{t+h}
+\widehat{C}_{t+h}
 =
-g_{\text{trend}}
+g_{\mathrm{trend}}
 \left(
-g_{\text{ML}}(\phi(z_t))
+g_{\mathrm{ML}}(\phi(z_t))
 \right),
 $$
 
 where
 
 $$
-g_{\text{ML}}(\phi(z_t))=\hat{f}_K(\tilde{x}_t)
+g_{\mathrm{ML}}(\phi(z_t))
+=
+\widehat{f}_K(\widetilde{x}_t),
 $$
 
 and
 
 $$
-g_{\text{trend}}(u)=u(1+\bar{r})^h.
+g_{\mathrm{trend}}(u)
+=
+u(1+\overline{r})^h.
 $$
 
-This decomposition is useful because it separates two assumptions:
+This decomposition exposes two separate assumptions:
 
-1. the feature vector contains enough information to estimate a local close-price
-   level, and
-2. the stored or fallback mean return is a reasonable short-horizon extrapolator.
+1. the engineered feature vector contains information about the local close
+   price level,
+2. the stored or recent mean return is a reasonable short-horizon drift proxy.
 
-Both assumptions are strong in cryptocurrency markets. Price distributions are
-heavy-tailed, volatility clusters over time, and structural breaks are common.
-Therefore, the implemented method is more defensible as a baseline for research
-comparison than as a standalone market model.
-
-## 13. Limitations and Threats to Validity
-
-### 13.1 Same-Day Target Construction
-
-The training target is $C_t$, and the feature vector includes quantities
-computed using day $t$, including $H_t$, $L_t$, $V_t$, and rolling
-statistics containing $C_t$. For strict next-day forecasting, the target would
-typically be shifted:
+Both assumptions are strong. In liquid markets, a random-walk benchmark is often
+difficult to beat out of sample. A rigorous empirical study would therefore
+compare the model against the naive baseline
 
 $$
-y_t^{\text{next}} = C_{t+1}
-\quad\text{or}\quad
-y_t^{\text{return}} = r_{t+1}.
+\widehat{C}_{t+h}^{\mathrm{rw}} = C_t,
 $$
 
-The current repository does not apply that shift. As a result, the XGBoost
-component should be read as a same-period price-level regression used inside a
-projection rule.
+and against an empirical drift baseline
 
-### 13.2 No Backtesting Protocol
+$$
+\widehat{C}_{t+h}^{\mathrm{drift}}
+=
+C_t(1+\overline{r})^h.
+$$
 
-The repository does not currently implement:
+The repository currently implements the second idea as a fallback, but it does
+not yet run a formal benchmark evaluation.
 
-- chronological train/validation/test splitting,
-- expanding-window or rolling-window backtests,
-- prediction-interval estimation,
-- benchmark comparison against random walk or buy-and-hold,
-- transaction costs, slippage, or liquidity constraints,
-- statistical significance tests such as Diebold-Mariano comparisons.
+## 14. Validity Threats
 
-A paper-grade empirical study would require such a protocol before making
-claims about predictive performance.
+### 14.1 Same-Period Target
 
-### 13.3 Non-Stationarity
+The current target is $C_t$, while the feature vector includes same-day
+variables such as $H_t$, $L_t$, $V_t$, and rolling features containing
+$C_t$. A strict forecasting target would be shifted:
+
+$$
+y_t^{\mathrm{next}} = C_{t+1},
+$$
+
+or defined as a forward return:
+
+$$
+y_t^{\mathrm{return}}
+=
+\frac{C_{t+h}-C_t}{C_t}.
+$$
+
+Therefore, the XGBoost component should be read as a same-period price-level
+regressor embedded inside a forward projection rule.
+
+### 14.2 No Walk-Forward Backtest
+
+The repository does not currently implement chronological train/test splitting,
+rolling-origin validation, expanding-window validation, or out-of-sample
+benchmark comparisons. A research-grade experiment would define train and test
+sets such that
+
+$$
+\max(t_{\mathrm{train}}) < \min(t_{\mathrm{test}}).
+$$
+
+Without this separation, in-sample error would not be evidence of forecasting
+skill.
+
+### 14.3 No Transaction-Cost Model
+
+A prediction can be directionally correct while still being unprofitable after
+costs. A strategy-level return would need to subtract fees, slippage, spread,
+and turnover effects:
+
+$$
+R_t^{\mathrm{net}}
+=
+R_t^{\mathrm{gross}}
+-
+\mathrm{fee}_t
+-
+\mathrm{slippage}_t
+-
+\mathrm{spread}_t.
+$$
+
+No such trading layer exists in this repository.
+
+### 14.4 Point Forecast Without Uncertainty
+
+The application returns a single projected price:
+
+$$
+\widehat{C}_{t+h}.
+$$
+
+It does not estimate an interval such as
+
+$$
+\left[
+q_{\alpha/2}(C_{t+h}\mid x_t),
+q_{1-\alpha/2}(C_{t+h}\mid x_t)
+\right].
+$$
+
+For risk-aware use, predictive intervals and tail estimates are usually more
+informative than isolated point forecasts.
+
+### 14.5 Regime Instability
 
 The conditional distribution
 
@@ -714,31 +935,63 @@ $$
 P(C_{t+h}\mid x_t)
 $$
 
-is unlikely to be stable over long periods. Cryptoasset regimes can change after
-exchange failures, ETF flows, monetary-policy shifts, protocol upgrades,
-regulatory events, and leverage liquidations. A model trained on the past year
-may not remain calibrated in a new regime.
+is unlikely to remain stable across exchange failures, ETF-flow regimes,
+leverage cycles, liquidity shocks, protocol events, regulatory shifts, and
+macro-policy changes. A one-year training window can become stale quickly in a
+new market regime.
 
-### 13.4 Point Forecast Only
+## 15. Research-Grade Extension Plan
 
-The application returns a point forecast. It does not estimate predictive
-uncertainty:
+To convert this repository into a paper-grade forecasting study, the next
+iteration should implement:
+
+| Requirement | Purpose |
+| --- | --- |
+| shifted targets | remove same-period leakage from the learning problem |
+| walk-forward validation | evaluate only on future data relative to each training window |
+| random-walk benchmark | test whether the model beats a hard financial baseline |
+| drift benchmark | separate XGBoost value from simple return extrapolation |
+| error metrics | report MAE, RMSE, MAPE, and directional accuracy |
+| risk metrics | report volatility, drawdown, turnover, and Sharpe-like ratios |
+| transaction costs | avoid overstating strategy-level performance |
+| prediction intervals | quantify uncertainty and tail risk |
+| regime analysis | test robustness across market conditions |
+
+For example, an $h$-day forward-return target could be defined as
 
 $$
-\hat{C}_{t+h}
-\quad\text{without}\quad
-\left[
-q_{\alpha/2}(C_{t+h}\mid x_t),
-q_{1-\alpha/2}(C_{t+h}\mid x_t)
-\right].
+y_t^{(h)}
+=
+\frac{C_{t+h}-C_t}{C_t}.
 $$
 
-For financial decision-making, intervals, drawdown estimates, and tail-risk
-metrics are generally more informative than isolated point estimates.
+All features would then need to be measurable at decision time $t$, and every
+training example would satisfy
 
-## 14. Reproducibility
+$$
+x_t \in \mathcal{F}_t,
+\qquad
+y_t^{(h)} \in \mathcal{F}_{t+h},
+$$
 
-### 14.1 Installation
+where $\mathcal{F}_t$ denotes the information available at time $t$.
+
+A walk-forward evaluation could use windows
+
+$$
+\mathcal{T}_k =
+\{1,\ldots,t_k\},
+\qquad
+\mathcal{V}_k =
+\{t_k+1,\ldots,t_k+h\}.
+$$
+
+The model would be trained on $\mathcal{T}_k$, evaluated on
+$\mathcal{V}_k$, and then rolled forward.
+
+## 16. Reproducibility
+
+### 16.1 Installation
 
 ```bash
 python3 -m venv venv
@@ -746,25 +999,33 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 14.2 Running the Application
+### 16.2 Running the Application
 
 ```bash
 python src/app.py
 ```
 
-The Flask server runs on:
+The Flask development server starts at:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-### 14.3 Supported Web Inputs
+### 16.3 Supported UI Inputs
 
-The UI exposes BTC, ETH, SOL, XRP, LTC, and DOGE. The backend also accepts
-symbols that can be normalized into Yahoo Finance tickers such as `BTC-USD`.
-The forecast horizon is capped at 90 days.
+The HTML interface exposes:
 
-### 14.4 Model Artifact
+- Bitcoin (`BTC`)
+- Ethereum (`ETH`)
+- Solana (`SOL`)
+- Ripple (`XRP`)
+- Litecoin (`LTC`)
+- Dogecoin (`DOGE`)
+
+The backend normalizes symbols without a dash into Yahoo Finance tickers, for
+example `BTC` becomes `BTC-USD`. The forecast horizon is capped at 90 days.
+
+### 16.4 Model Artifact Contract
 
 At startup, the application attempts to load:
 
@@ -772,45 +1033,38 @@ At startup, the application attempts to load:
 data/crypto_predictor.pkl
 ```
 
-The file may contain a model object directly or a dictionary with keys such as
-`model`, `scaler`, and `daily_return`. If no usable model/scaler is loaded, the
-application uses the fallback return-projection path.
+The artifact may be either:
 
-In the current repository state, predictions should be interpreted with this
-loader contract in mind: a serialized object that does not provide both a usable
-model and a compatible scaler will not activate the full normalized XGBoost
-path. The live system then behaves as the recent-return projection estimator
-described in Section 10.
+- a model object directly,
+- a dictionary containing keys such as `model`, `scaler`, and `daily_return`.
 
-## 15. Suggested Extensions for a Research-Grade Study
+The full XGBoost path requires both a usable model and a compatible scaler. If
+either is unavailable, the repository uses the recent-return fallback estimator.
 
-The next research iteration should convert this baseline into a falsifiable
-forecasting experiment:
+## 17. File Map
 
-1. define the target as next-day return or $h$-day forward return,
-2. shift all features so only information available at decision time is used,
-3. add walk-forward validation,
-4. compare against random walk, moving-average, ARIMA, and naive momentum
-   baselines,
-5. evaluate MAE, RMSE, MAPE, directional accuracy, calibration, Sharpe ratio,
-   maximum drawdown, and turnover,
-6. estimate uncertainty with quantile regression, conformal prediction, or
-   bootstrap ensembles,
-7. include transaction costs and liquidity assumptions,
-8. report results by market regime.
+```text
+.
+|-- README.md
+|-- LICENSE
+|-- requirements.txt
+|-- app.py
+|-- data/
+|   `-- crypto_predictor.pkl
+|-- src/
+|   `-- app.py
+`-- templates/
+    `-- index.html
+```
 
-## 16. Ethics, Safety, and Financial Disclaimer
+## 18. Safety and Ethics
 
-This repository is for educational and research purposes only. It does not
-provide financial advice, investment advice, or a trading recommendation.
-Cryptocurrency markets are volatile and can produce large losses. Any empirical
-claim about profitability would require out-of-sample validation, transaction
-cost modeling, and risk analysis that are not currently implemented in this
-repository.
-
-## 17. License
-
-This project is protected under the MIT License.
+This project is for educational and research purposes only. It is not financial
+advice, investment advice, or a trading recommendation. Cryptocurrency prices
+are volatile, and losses can be large. Any claim about profitability would
+require out-of-sample validation, benchmark comparison, transaction-cost
+modeling, risk analysis, and reproducible statistical testing that are not
+currently implemented in this repository.
 
 ## References
 
@@ -819,3 +1073,11 @@ This project is protected under the MIT License.
    2001.
 3. L. Breiman, J. Friedman, R. Olshen, and C. Stone, *Classification and
    Regression Trees*, 1984.
+4. R. F. Engle, "Autoregressive Conditional Heteroscedasticity with Estimates of
+   the Variance of United Kingdom Inflation," 1982.
+5. E. F. Fama, "Efficient Capital Markets: A Review of Theory and Empirical
+   Work," 1970.
+
+## License
+
+This project is released under the MIT License. See `LICENSE` for details.
