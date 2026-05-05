@@ -139,7 +139,7 @@ After feature construction, rows with missing rolling-window values are dropped.
 For window length $k$, the simple moving average of close prices is
 
 $$
-\operatorname{SMA}_k(t)
+\mathrm{SMA}_k(t)
 =
 \frac{1}{k}
 \sum_{i=0}^{k-1} C_{t-i}.
@@ -148,14 +148,14 @@ $$
 The code uses two windows:
 
 $$
-\operatorname{SMA}_7(t)
+\mathrm{SMA}_7(t)
 =
 \frac{1}{7}
 \left(C_t+C_{t-1}+\cdots+C_{t-6}\right),
 $$
 
 $$
-\operatorname{SMA}_{14}(t)
+\mathrm{SMA}_{14}(t)
 =
 \frac{1}{14}
 \left(C_t+C_{t-1}+\cdots+C_{t-13}\right).
@@ -164,7 +164,7 @@ $$
 The short moving average captures faster local price level information, while
 the 14-day average smooths over a longer local horizon. Their inclusion gives a
 tree model access to level and trend-like comparisons, for example whether
-$\operatorname{SMA}_7(t) > \operatorname{SMA}_{14}(t)$.
+$\mathrm{SMA}_7(t) > \mathrm{SMA}_{14}(t)$.
 
 ### 5.2 Momentum
 
@@ -199,7 +199,7 @@ $$
 \sqrt{
 \frac{1}{7-1}
 \sum_{i=0}^{6}
-\left(C_{t-i}-\operatorname{SMA}_7(t)\right)^2
+\left(C_{t-i}-\mathrm{SMA}_7(t)\right)^2
 }.
 $$
 
@@ -227,8 +227,8 @@ O_t,\,
 H_t,\,
 L_t,\,
 V_t,\,
-\operatorname{SMA}_7(t),\,
-\operatorname{SMA}_{14}(t),\,
+\mathrm{SMA}_7(t),\,
+\mathrm{SMA}_{14}(t),\,
 M_4(t),\,
 \sigma_7(t)
 \right]^\top.
@@ -288,7 +288,7 @@ $$
 where
 
 $$
-S=\operatorname{diag}\left(
+S=\mathrm{diag}\left(
 \frac{1}{M_1-m_1},\ldots,\frac{1}{M_p-m_p}
 \right).
 $$
@@ -337,7 +337,7 @@ XGBoost augments empirical loss with tree complexity penalties. A common
 regularized objective for tree $f$ is
 
 $$
-\operatorname{Obj}
+\mathrm{Obj}
 =
 \sum_{i=1}^{n} l(y_i,\hat{y}_i)
 +
@@ -370,7 +370,7 @@ $$
 The next tree $f_k$ is chosen to minimize
 
 $$
-\operatorname{Obj}^{(k)}
+\mathrm{Obj}^{(k)}
 =
 \sum_{i=1}^{n}
 l\left(y_i,\hat{y}_i^{(k-1)}+f_k(\tilde{x}_i)\right)
@@ -419,7 +419,7 @@ $$
 Ignoring the constant term independent of $f_k$, the approximate objective is
 
 $$
-\widetilde{\operatorname{Obj}}^{(k)}
+\widetilde{\mathrm{Obj}}^{(k)}
 =
 \sum_{i=1}^{n}
 \left[
@@ -446,7 +446,7 @@ $$
 Then the objective decomposes by leaf:
 
 $$
-\widetilde{\operatorname{Obj}}^{(k)}
+\widetilde{\mathrm{Obj}}^{(k)}
 =
 \sum_{j=1}^{T}
 \left[
@@ -461,7 +461,7 @@ $$
 The optimal leaf weight is obtained by differentiating with respect to $w_j$:
 
 $$
-\frac{\partial \widetilde{\operatorname{Obj}}^{(k)}}{\partial w_j}
+\frac{\partial \widetilde{\mathrm{Obj}}^{(k)}}{\partial w_j}
 =
 G_j+(H_j+\lambda)w_j.
 $$
@@ -478,7 +478,7 @@ $$
 Substituting this optimum into the objective gives the score of a tree structure:
 
 $$
-\widetilde{\operatorname{Obj}}^{(k)}(q)
+\widetilde{\mathrm{Obj}}^{(k)}(q)
 =
 -
 \frac{1}{2}
@@ -491,7 +491,7 @@ $$
 For a proposed split of a node into left and right children, the split gain is
 
 $$
-\operatorname{Gain}
+\mathrm{Gain}
 =
 \frac{1}{2}
 \left[
