@@ -25,6 +25,22 @@ forecasting, not as a validated strategy.
 boosting, technical indicators, min-max scaling, time-series regression, Flask,
 Yahoo Finance, financial machine learning.
 
+## Navigation
+
+| Paper Area | Direct Links |
+| --- | --- |
+| Setup and scope | [Abstract](#abstract), [Introduction](#1-introduction), [Contributions](#2-contributions), [System Overview](#3-system-overview) |
+| Visual material | [Visual Demonstration](#4-visual-demonstration), [End-to-End Data Flow](#41-end-to-end-data-flow), [Request and Response Sequence](#42-request-and-response-sequence), [Forecast Geometry](#43-conceptual-forecast-geometry) |
+| Mathematical formulation | [Market Data and Notation](#5-market-data-and-notation), [Feature Map](#6-feature-map), [Normalization](#7-normalization), [Primary Estimator](#8-primary-estimator), [Boosting Derivation](#9-boosting-derivation) |
+| Forecasting mechanics | [Forecast Construction](#10-forecast-construction), [Fallback Estimator](#11-fallback-estimator), [Algorithm](#12-algorithm), [Statistical Interpretation](#13-statistical-interpretation) |
+| Research limits and usage | [Validity Threats](#14-validity-threats), [Research-Grade Extension Plan](#15-research-grade-extension-plan), [Reproducibility](#16-reproducibility), [File Map](#17-file-map), [Safety and Ethics](#18-safety-and-ethics) |
+
+For a fast technical read, start with the [system overview](#3-system-overview),
+then move through the [feature map](#6-feature-map),
+[normalization step](#7-normalization), [boosting derivation](#9-boosting-derivation), and
+[forecast construction](#10-forecast-construction). For a critical review of
+the model assumptions, jump directly to [validity threats](#14-validity-threats).
+
 ## 1. Introduction
 
 Cryptocurrency forecasting is a non-stationary time-series problem with
@@ -73,6 +89,10 @@ The executable application is implemented in `src/app.py`. The root-level
 `app.py` is empty in the current repository state. The user interface is defined
 in `templates/index.html`.
 
+This section is the implementation counterpart to the mathematical
+[feature map](#6-feature-map), [normalization](#7-normalization), and
+[forecast construction](#10-forecast-construction) sections.
+
 | Layer | Implementation |
 | --- | --- |
 | Web framework | Flask |
@@ -89,6 +109,12 @@ in `templates/index.html`.
 | Forecast horizon | integer horizon capped at 90 days |
 
 ## 4. Visual Demonstration
+
+The diagrams below provide a visual route into the formal model. Use
+[Figure 1](#41-end-to-end-data-flow) for the data pipeline,
+[Figure 2](#42-request-and-response-sequence) for the web request lifecycle, and
+[Figure 3](#43-conceptual-forecast-geometry) for the geometric projection
+sensitivity.
 
 ### 4.1 End-to-End Data Flow
 
@@ -164,6 +190,9 @@ horizon grows.
 
 ## 5. Market Data and Notation
 
+This notation supports the later derivations in the [feature map](#6-feature-map),
+[primary estimator](#8-primary-estimator), and [forecast construction](#10-forecast-construction).
+
 Let asset identity be indexed by $a$, and let daily time be indexed by
 $t = 1,\ldots,T$. The raw market observation is
 
@@ -209,6 +238,10 @@ T_{\mathrm{chart}} = 180.
 ```
 
 ## 6. Feature Map
+
+The feature map is the bridge between raw OHLCV observations in
+[Section 5](#5-market-data-and-notation) and the scaled model input in
+[Section 7](#7-normalization).
 
 The repository transforms each OHLCV row into an eight-dimensional supervised
 learning feature vector after dropping rows with missing rolling-window values.
@@ -350,6 +383,9 @@ geometric trend rule.
 
 ## 7. Normalization
 
+This section transforms the feature vector from [Section 6](#6-feature-map)
+into the scaled input consumed by the [primary estimator](#8-primary-estimator).
+
 The repository applies min-max scaling to the feature matrix before fitting the
 XGBoost model. For feature $j$, define
 
@@ -402,6 +438,10 @@ This matters in cryptocurrency markets because new highs, new lows, and volume
 regime changes are common.
 
 ## 8. Primary Estimator
+
+The estimator uses the scaled feature representation from
+[Section 7](#7-normalization). Its tree-update mechanics are derived in
+[Section 9](#9-boosting-derivation).
 
 The primary estimator is `XGBRegressor` configured with squared-error
 regression and 150 boosting rounds:
@@ -466,6 +506,10 @@ $j$, $\gamma$ penalizes additional leaves, and $\lambda$ penalizes large
 leaf weights.
 
 ## 9. Boosting Derivation
+
+This derivation explains the optimization mechanism behind the
+[primary estimator](#8-primary-estimator). The output of this estimator becomes
+the base price used in [forecast construction](#10-forecast-construction).
 
 At boosting iteration $k$, the prediction before adding the new tree is
 
@@ -635,6 +679,11 @@ enough to justify the additional tree complexity.
 
 ## 10. Forecast Construction
 
+This section combines the XGBoost base estimate from
+[Section 8](#8-primary-estimator) with the geometric return logic visualized in
+[Figure 3](#43-conceptual-forecast-geometry). If the primary model path is not
+available, the system follows the [fallback estimator](#11-fallback-estimator).
+
 The primary model path first predicts a base close estimate from the latest
 scaled feature row:
 
@@ -717,6 +766,11 @@ and downward otherwise.
 
 ## 11. Fallback Estimator
 
+The fallback estimator is the dependency-light alternative to the
+[primary estimator](#8-primary-estimator). It shares the same compounding logic
+as [forecast construction](#10-forecast-construction), but it uses recent close
+returns instead of an XGBoost base estimate.
+
 When either `self.model` or `self.scaler` is missing, the application avoids the
 XGBoost path and uses recent arithmetic returns. For a close-price sequence
 $\{C_1,\ldots,C_n\}$, the one-period returns are
@@ -798,6 +852,10 @@ Route routine:
 
 ## 13. Statistical Interpretation
 
+This section connects the implemented algorithm to the limitations discussed in
+[validity threats](#14-validity-threats) and the next-step protocol in the
+[research-grade extension plan](#15-research-grade-extension-plan).
+
 The implemented model can be decomposed as
 
 ```math
@@ -851,6 +909,10 @@ The repository currently implements the second idea as a fallback, but it does
 not yet run a formal benchmark evaluation.
 
 ## 14. Validity Threats
+
+These threats explain why the current system should be treated as an
+educational baseline despite the formal machinery in the
+[boosting derivation](#9-boosting-derivation) and [forecast construction](#10-forecast-construction).
 
 ### 14.1 Same-Period Target
 
@@ -942,6 +1004,9 @@ new market regime.
 
 ## 15. Research-Grade Extension Plan
 
+This plan turns the limitations in [Section 14](#14-validity-threats) into a
+concrete path toward a falsifiable empirical study.
+
 To convert this repository into a paper-grade forecasting study, the next
 iteration should implement:
 
@@ -990,6 +1055,9 @@ The model would be trained on $\mathcal{T}_k$, evaluated on
 $\mathcal{V}_k$, and then rolled forward.
 
 ## 16. Reproducibility
+
+Use this section after reviewing the [system overview](#3-system-overview) and
+[algorithm](#12-algorithm).
 
 ### 16.1 Installation
 
