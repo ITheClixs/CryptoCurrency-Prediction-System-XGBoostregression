@@ -6,7 +6,7 @@ This repository implements a compact machine-learning system for cryptocurrency
 price projection in a Flask web application. The implemented estimator combines
 Yahoo Finance OHLCV observations, deterministic technical indicators, min-max
 normalization, and an XGBoost regression model. Given a cryptoasset symbol and a
-forecast horizon $h \in \{1,...,90\}$, the system estimates a conditional
+forecast horizon $h \in \{1,\ldots,90\}$, the system estimates a conditional
 price level from the latest engineered feature vector and then applies a
 geometric trend adjustment based on a stored empirical daily return. Inside the
 `predict_price()` routine, missing model/scaler state activates a lightweight
@@ -108,12 +108,12 @@ The top-level `app.py` file is empty; the executable application entry point is
 ## 4. Market Data and Notation
 
 Let a cryptoasset be indexed by $a$, and let daily time be indexed by
-$t=1,...,T$. The raw OHLCV observation is
+$t=1,\ldots,T$. The raw OHLCV observation is
 
 $$
 z_t^{(a)}
 =
-(O_t^{(a)}, H_t^{(a)}, L_t^{(a)}, C_t^{(a)}, V_t^{(a)}),
+\left(O_t^{(a)}, H_t^{(a)}, L_t^{(a)}, C_t^{(a)}, V_t^{(a)}\right),
 $$
 
 where $O_t$ is open price, $H_t$ is high price, $L_t$ is low price,
@@ -123,7 +123,7 @@ superscript is omitted below.
 The repository trains on one year of daily data when `train_model()` is called:
 
 $$
-D_{365} = \{z_t\}_{t=1}^{365}.
+\mathcal{D}_{365} = \{z_t\}_{t=1}^{365}.
 $$
 
 For web predictions, the model fetches recent data and constructs the same
@@ -139,7 +139,7 @@ After feature construction, rows with missing rolling-window values are dropped.
 For window length $k$, the simple moving average of close prices is
 
 $$
-SMA_k(t)
+\mathrm{SMA}_k(t)
 =
 \frac{1}{k}
 \sum_{i=0}^{k-1} C_{t-i}.
@@ -148,23 +148,23 @@ $$
 The code uses two windows:
 
 $$
-SMA_7(t)
+\mathrm{SMA}_7(t)
 =
 \frac{1}{7}
-(C_t+C_{t-1}+...+C_{t-6}),
+\left(C_t+C_{t-1}+\cdots+C_{t-6}\right),
 $$
 
 $$
-SMA_{14}(t)
+\mathrm{SMA}_{14}(t)
 =
 \frac{1}{14}
-(C_t+C_{t-1}+...+C_{t-13}).
+\left(C_t+C_{t-1}+\cdots+C_{t-13}\right).
 $$
 
 The short moving average captures faster local price level information, while
 the 14-day average smooths over a longer local horizon. Their inclusion gives a
 tree model access to level and trend-like comparisons, for example whether
-$SMA_7(t) > SMA_{14}(t)$.
+$\mathrm{SMA}_7(t) > \mathrm{SMA}_{14}(t)$.
 
 ### 5.2 Momentum
 
@@ -199,22 +199,18 @@ $$
 \sqrt{
 \frac{1}{7-1}
 \sum_{i=0}^{6}
-(C_{t-i}-SMA_7(t))^2
+\left(C_{t-i}-\mathrm{SMA}_7(t)\right)^2
 }.
 $$
 
 This quantity measures local dispersion of prices around their 7-day mean. It is
 a price-level volatility proxy rather than a return-volatility estimator. A
-return-volatility estimator would instead use arithmetic returns
+return-volatility estimator would instead use
 
 $$
 r_t=\frac{C_t-C_{t-1}}{C_{t-1}}
-$$
-
-or log returns
-
-$$
-\ell_t=log C_t-log C_{t-1}.
+\quad\text{or}\quad
+\ell_t=\log C_t-\log C_{t-1}.
 $$
 
 The implemented system uses the price-level version because it follows directly
@@ -223,11 +219,41 @@ from `data["Close"].rolling(7).std()`.
 ### 5.4 Complete Feature Vector
 
 The model target is the close price $y_t=C_t$. The training feature vector is
-$x_t = [O_t, H_t, L_t, V_t, SMA_7(t), SMA_{14}(t), M_4(t), \sigma_7(t)]^T$.
 
-Equivalently, if $X \in R^{n \times p}$ is the design matrix after dropping
-missing rows, then $p=8$, the rows of $X$ are $x_1^T,...,x_n^T$, and the target
-vector is $y=[C_1,...,C_n]^T$.
+$$
+x_t =
+\left[
+O_t,\,
+H_t,\,
+L_t,\,
+V_t,\,
+\mathrm{SMA}_7(t),\,
+\mathrm{SMA}_{14}(t),\,
+M_4(t),\,
+\sigma_7(t)
+\right]^\top.
+$$
+
+Equivalently, if $X\in\mathbb{R}^{n\times p}$ is the design matrix after
+dropping missing rows, then $p=8$ and
+
+$$
+X =
+\begin{bmatrix}
+x_1^\top \\
+x_2^\top \\
+\vdots \\
+x_n^\top
+\end{bmatrix},
+\qquad
+y =
+\begin{bmatrix}
+C_1 \\
+C_2 \\
+\vdots \\
+C_n
+\end{bmatrix}.
+$$
 
 Because the target is same-day close and the feature vector contains same-day
 open, high, low, volume, and rolling features that include $C_t$, this is not
@@ -247,8 +273,9 @@ $$
 where
 
 $$
-m_j = min_{1\leq t\leq n} x_{t,j},
-M_j = max_{1\leq t\leq n} x_{t,j}.
+m_j = \min_{1\leq t\leq n} x_{t,j},
+\qquad
+M_j = \max_{1\leq t\leq n} x_{t,j}.
 $$
 
 Thus each transformed feature satisfies $\tilde{x}_{t,j}\in[0,1]$ when future
@@ -261,9 +288,9 @@ $$
 where
 
 $$
-S=diag(
-\frac{1}{M_1-m_1},...,\frac{1}{M_p-m_p}
-).
+S=\mathrm{diag}\left(
+\frac{1}{M_1-m_1},\ldots,\frac{1}{M_p-m_p}
+\right).
 $$
 
 Tree ensembles do not generally require monotone feature scaling to find
@@ -281,10 +308,11 @@ $$
 \hat{f}_K(\tilde{x})
 =
 \sum_{k=1}^{K} f_k(\tilde{x}),
-f_k \in F,
+\qquad
+f_k \in \mathcal{F},
 $$
 
-where $F$ is the space of CART-style regression trees. Each tree maps
+where $\mathcal{F}$ is the space of CART-style regression trees. Each tree maps
 an input vector to a leaf weight:
 
 $$
@@ -299,17 +327,17 @@ the prediction after $K$ trees is $\hat{y}_i^{(K)}$, and the empirical
 squared-error loss is
 
 $$
-L(\theta)
+\mathcal{L}(\theta)
 =
 \sum_{i=1}^{n}
-(y_i-\hat{y}_i)^2.
+\left(y_i-\hat{y}_i\right)^2.
 $$
 
 XGBoost augments empirical loss with tree complexity penalties. A common
 regularized objective for tree $f$ is
 
 $$
-Obj
+\mathrm{Obj}
 =
 \sum_{i=1}^{n} l(y_i,\hat{y}_i)
 +
@@ -342,10 +370,10 @@ $$
 The next tree $f_k$ is chosen to minimize
 
 $$
-Obj^{(k)}
+\mathrm{Obj}^{(k)}
 =
 \sum_{i=1}^{n}
-l(y_i,\hat{y}_i^{(k-1)}+f_k(\tilde{x}_i))
+l\left(y_i,\hat{y}_i^{(k-1)}+f_k(\tilde{x}_i)\right)
 +
 \Omega(f_k).
 $$
@@ -353,9 +381,9 @@ $$
 Using a second-order Taylor approximation around $\hat{y}_i^{(k-1)}$,
 
 $$
-l(y_i,\hat{y}_i^{(k-1)}+f_k(\tilde{x}_i))
+l\left(y_i,\hat{y}_i^{(k-1)}+f_k(\tilde{x}_i)\right)
 \approx
-l(y_i,\hat{y}_i^{(k-1)})
+l\left(y_i,\hat{y}_i^{(k-1)}\right)
 +
 g_i f_k(\tilde{x}_i)
 +
@@ -367,10 +395,11 @@ where
 $$
 g_i =
 \frac{\partial l(y_i,\hat{y})}{\partial \hat{y}}
-|_{\hat{y}=\hat{y}_i^{(k-1)}},
+\bigg|_{\hat{y}=\hat{y}_i^{(k-1)}},
+\qquad
 h_i =
 \frac{\partial^2 l(y_i,\hat{y})}{\partial \hat{y}^2}
-|_{\hat{y}=\hat{y}_i^{(k-1)}}.
+\bigg|_{\hat{y}=\hat{y}_i^{(k-1)}}.
 $$
 
 For squared error
@@ -383,20 +412,21 @@ the derivatives are
 
 $$
 g_i = 2(\hat{y}_i^{(k-1)}-y_i),
+\qquad
 h_i = 2.
 $$
 
 Ignoring the constant term independent of $f_k$, the approximate objective is
 
 $$
-\widetilde{Obj}^{(k)}
+\widetilde{\mathrm{Obj}}^{(k)}
 =
 \sum_{i=1}^{n}
-[
+\left[
 g_i f_k(\tilde{x}_i)
 +
 \frac{1}{2}h_i f_k(\tilde{x}_i)^2
-]
+\right]
 +
 \gamma T
 +
@@ -409,20 +439,21 @@ second derivatives
 
 $$
 G_j=\sum_{i\in I_j}g_i,
+\qquad
 H_j=\sum_{i\in I_j}h_i.
 $$
 
 Then the objective decomposes by leaf:
 
 $$
-\widetilde{Obj}^{(k)}
+\widetilde{\mathrm{Obj}}^{(k)}
 =
 \sum_{j=1}^{T}
-[
+\left[
 G_jw_j
 +
 \frac{1}{2}(H_j+\lambda)w_j^2
-]
+\right]
 +
 \gamma T.
 $$
@@ -430,7 +461,7 @@ $$
 The optimal leaf weight is obtained by differentiating with respect to $w_j$:
 
 $$
-\frac{\partial \widetilde{Obj}^{(k)}}{\partial w_j}
+\frac{\partial \widetilde{\mathrm{Obj}}^{(k)}}{\partial w_j}
 =
 G_j+(H_j+\lambda)w_j.
 $$
@@ -447,7 +478,7 @@ $$
 Substituting this optimum into the objective gives the score of a tree structure:
 
 $$
-\widetilde{Obj}^{(k)}(q)
+\widetilde{\mathrm{Obj}}^{(k)}(q)
 =
 -
 \frac{1}{2}
@@ -460,16 +491,16 @@ $$
 For a proposed split of a node into left and right children, the split gain is
 
 $$
-Gain
+\mathrm{Gain}
 =
 \frac{1}{2}
-[
+\left[
 \frac{G_L^2}{H_L+\lambda}
 +
 \frac{G_R^2}{H_R+\lambda}
 -
 \frac{(G_L+G_R)^2}{H_L+H_R+\lambda}
-]
+\right]
 -
 \gamma.
 $$
@@ -483,7 +514,7 @@ raw OHLCV variables, moving averages, momentum, and volatility.
 The trained model produces a base estimate from the latest feature vector:
 
 $$
-\hat{C}_{t,base}
+\hat{C}_{t,\text{base}}
 =
 \hat{f}_K(\tilde{x}_t).
 $$
@@ -509,13 +540,13 @@ For a requested horizon $h$, the final projected price is
 $$
 \hat{C}_{t+h}
 =
-\hat{C}_{t,base}(1+\bar{r})^h.
+\hat{C}_{t,\text{base}}(1+\bar{r})^h.
 $$
 
 This formula follows from recursively applying a constant expected daily return:
 
 $$
-\hat{C}_{t+1}=\hat{C}_{t,base}(1+\bar{r}),
+\hat{C}_{t+1}=\hat{C}_{t,\text{base}}(1+\bar{r}),
 $$
 
 $$
@@ -523,7 +554,7 @@ $$
 =
 \hat{C}_{t+1}(1+\bar{r})
 =
-\hat{C}_{t,base}(1+\bar{r})^2,
+\hat{C}_{t,\text{base}}(1+\bar{r})^2,
 $$
 
 and, by induction,
@@ -531,7 +562,7 @@ and, by induction,
 $$
 \hat{C}_{t+h}
 =
-\hat{C}_{t,base}(1+\bar{r})^h.
+\hat{C}_{t,\text{base}}(1+\bar{r})^h.
 $$
 
 The reported projected change is
@@ -557,11 +588,12 @@ $$
 =
 \frac{1}{m}
 \sum_{j=1}^{m} r_{n-j+1},
-m=min(7,n-1),
+\qquad
+m=\min(7,n-1),
 $$
 
 $$
-\hat{C}_{t+h}^{fallback}
+\hat{C}_{t+h}^{\text{fallback}}
 =
 C_t(1+\bar{r}_{7})^h.
 $$
@@ -612,22 +644,22 @@ regression and deterministic trend extrapolation:
 $$
 \hat{C}_{t+h}
 =
-g_{trend}
-(
-g_{ML}(\phi(z_t))
-),
+g_{\text{trend}}
+\left(
+g_{\text{ML}}(\phi(z_t))
+\right),
 $$
 
 where
 
 $$
-g_{ML}(\phi(z_t))=\hat{f}_K(\tilde{x}_t)
+g_{\text{ML}}(\phi(z_t))=\hat{f}_K(\tilde{x}_t)
 $$
 
 and
 
 $$
-g_{trend}(u)=u(1+\bar{r})^h.
+g_{\text{trend}}(u)=u(1+\bar{r})^h.
 $$
 
 This decomposition is useful because it separates two assumptions:
@@ -651,13 +683,9 @@ statistics containing $C_t$. For strict next-day forecasting, the target would
 typically be shifted:
 
 $$
-y_t^{next} = C_{t+1}
-$$
-
-or
-
-$$
-y_t^{return} = r_{t+1}.
+y_t^{\text{next}} = C_{t+1}
+\quad\text{or}\quad
+y_t^{\text{return}} = r_{t+1}.
 $$
 
 The current repository does not apply that shift. As a result, the XGBoost
@@ -698,15 +726,11 @@ uncertainty:
 
 $$
 \hat{C}_{t+h}
-$$
-
-without interval estimates such as
-
-$$
-[
+\quad\text{without}\quad
+\left[
 q_{\alpha/2}(C_{t+h}\mid x_t),
 q_{1-\alpha/2}(C_{t+h}\mid x_t)
-].
+\right].
 $$
 
 For financial decision-making, intervals, drawdown estimates, and tail-risk
