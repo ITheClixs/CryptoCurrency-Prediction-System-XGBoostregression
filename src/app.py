@@ -57,7 +57,7 @@ def _parse_prediction_days(raw_days):
         raise ValueError("Days must be an integer between 1 and 90.")
     return max(1, min(days, 90))
 
-
+# Nesting
 def _normalize_market_data(data):
     if hasattr(data.columns, 'nlevels') and data.columns.nlevels > 1:
         data = data.copy()
@@ -133,7 +133,7 @@ class CryptoPredictor:
             cg_id = COINGECKO_IDS.get(symbol)
             if not cg_id:
                 raise ValueError("Unknown symbol for fallback. Install yfinance/pandas or use BTC/ETH/XRP/SOL/LTC/DOGE")
-
+# supported currencies
             url = f"https://api.coingecko.com/api/v3/coins/{cg_id}/market_chart?vs_currency=usd&days={days}"
             txt = http_get(url)
             import json
