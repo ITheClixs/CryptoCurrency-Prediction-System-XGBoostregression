@@ -13,14 +13,6 @@ available. If the trained model path is unavailable, the application falls back
 to a recent-return heuristic that compounds the current price by the mean of the
 latest observed daily returns.
 
-This README documents the repository as a research artifact. It states the
-mathematical estimator implemented by the code, derives the feature
-transformations and boosting objective, visualizes the runtime data flow, and
-identifies the empirical limitations that would need to be resolved before the
-project could support trading or investment claims. The system is best
-interpreted as an educational baseline for short-horizon digital-asset
-forecasting, not as a validated strategy.
-
 **Keywords:** cryptocurrency forecasting, OHLCV data, XGBoost, gradient
 boosting, technical indicators, min-max scaling, time-series regression, Flask,
 Yahoo Finance, financial machine learning.
@@ -80,8 +72,6 @@ This repository contributes:
 - a documented research protocol for turning the baseline into a falsifiable
   forecasting experiment.
 
-The contribution is methodological and educational. The current repository does
-not claim statistically significant predictive skill.
 
 ## 3. System Overview
 
